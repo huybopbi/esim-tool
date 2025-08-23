@@ -1,10 +1,13 @@
 import re
+import urllib.parse
 import qrcode
 from io import BytesIO
 from PIL import Image
-import base64
-import urllib.parse
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Tuple
+import cv2
+import numpy as np
+from pyzbar import pyzbar
+
 from config import IPHONE_ESIM_MODELS, ANDROID_ESIM_BRANDS
 
 class eSIMTools:
@@ -212,11 +215,11 @@ class eSIMTools:
             }
     
     def generate_qr_with_logo(self, esim_data: str, logo_text: str = "eSIM") -> BytesIO:
-        """Tạo QR code có logo text ở giữa"""
+        """Tạo QR code với logo text"""
         try:
             qr = qrcode.QRCode(
                 version=1,
-                error_correction=qrcode.constants.ERROR_CORRECT_H,  # High error correction for logo
+                error_correction=qrcode.constants.ERROR_CORRECT_L,
                 box_size=10,
                 border=4,
             )
@@ -224,51 +227,73 @@ class eSIMTools:
             qr.make(fit=True)
             
             # Tạo QR image
-            qr_img = qr.make_image(fill_color="black", back_color="white")
-            
-            # Thêm text logo ở giữa (nếu cần)
-            if logo_text:
-                from PIL import ImageDraw, ImageFont
-                draw = ImageDraw.Draw(qr_img)
-                
-                # Tính toán vị trí giữa
-                img_width, img_height = qr_img.size
-                
-                try:
-                    # Thử sử dụng font mặc định
-                    font = ImageFont.load_default()
-                except:
-                    font = None
-                
-                if font:
-                    # Tạo background trắng cho text
-                    text_bbox = draw.textbbox((0, 0), logo_text, font=font)
-                    text_width = text_bbox[2] - text_bbox[0]
-                    text_height = text_bbox[3] - text_bbox[1]
-                    
-                    text_x = (img_width - text_width) // 2
-                    text_y = (img_height - text_height) // 2
-                    
-                    # Vẽ background trắng
-                    padding = 5
-                    draw.rectangle([
-                        text_x - padding, text_y - padding,
-                        text_x + text_width + padding, text_y + text_height + padding
-                    ], fill="white")
-                    
-                    # Vẽ text
-                    draw.text((text_x, text_y), logo_text, fill="black", font=font)
+            img = qr.make_image(fill_color="black", back_color="white")
             
             # Convert to BytesIO
             bio = BytesIO()
-            qr_img.save(bio, format='PNG')
+            img.save(bio, format='PNG')
             bio.seek(0)
+            
             return bio
+        except Exception as e:
+            raise Exception(f"Lỗi tạo QR với logo: {e}")
+    
+    def decode_qr_from_image(self, image_data: bytes) -> str:
+        """Đọc QR code từ dữ liệu ảnh"""
+        try:
+            # Convert bytes to numpy array
+            nparr = np.frombuffer(image_data, np.uint8)
+            
+            # Decode image
+            img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            if img is None:
+                raise Exception("Không thể đọc ảnh")
+            
+            # Convert to grayscale for better QR detection
+            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            
+            # Decode QR codes
+            qr_codes = pyzbar.decode(gray)
+            
+            if not qr_codes:
+                # Thử với ảnh gốc nếu grayscale không work
+                qr_codes = pyzbar.decode(img)
+            
+            if not qr_codes:
+                raise Exception("Không tìm thấy QR code trong ảnh")
+            
+            # Lấy QR code đầu tiên
+            qr_data = qr_codes[0].data.decode('utf-8')
+            return qr_data
             
         except Exception as e:
-            # Fallback to simple QR if logo fails
-            return self.create_qr_from_sm_dp(esim_data, "")[0]
-
+            raise Exception(f"Lỗi đọc QR từ ảnh: {e}")
+    
+    def analyze_qr_image(self, image_data: bytes) -> Dict:
+        """Phân tích QR code từ ảnh và trả về thông tin chi tiết"""
+        try:
+            # Đọc QR data từ ảnh
+            qr_data = self.decode_qr_from_image(image_data)
+            
+            # Phân tích QR data
+            analysis = self.create_detailed_qr_info(qr_data)
+            
+            # Thêm thông tin về việc đọc từ ảnh
+            analysis['source'] = 'image'
+            analysis['qr_detected'] = True
+            
+            return analysis
+            
+        except Exception as e:
+            return {
+                'source': 'image',
+                'qr_detected': False,
+                'error': str(e),
+                'sm_dp_address': '',
+                'activation_code': '',
+                'format_type': 'error'
+            }
+    
     def check_iphone_compatibility(self, model: str) -> Tuple[bool, str]:
         """Kiểm tra iPhone có hỗ trợ eSIM không"""
         model_clean = model.strip().title()

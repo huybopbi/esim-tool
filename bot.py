@@ -16,9 +16,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Conversation states
-(WAITING_SM_DP, WAITING_ACTIVATION_CODE, WAITING_QR_DATA, 
- WAITING_DEVICE_MODEL, WAITING_SUPPORT_ISSUE) = range(5)
+# States cho conversation handlers
+WAITING_SM_DP_LINK, WAITING_ACTIVATION_CODE_LINK, WAITING_SM_DP_QR, WAITING_ACTIVATION_CODE_QR, WAITING_QR_DATA, WAITING_QR_IMAGE = range(6)
 
 class eSIMBot:
     def __init__(self):
@@ -153,6 +152,7 @@ class eSIMBot:
     # Tool 1: Tạo link cài eSIM cho iPhone
     async def start_create_link(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Bắt đầu tạo link cài eSIM"""
+        logger.info(f"start_create_link called for user {update.effective_user.id}")
         query = update.callback_query
         await query.edit_message_text(
             "🔗 **TẠO LINK CÀI eSIM CHO IPHONE**\n\n"
@@ -161,20 +161,24 @@ class eSIMBot:
             "Gửi /cancel để hủy",
             parse_mode=ParseMode.MARKDOWN
         )
-        return WAITING_SM_DP
+        logger.info("Returning WAITING_SM_DP_LINK state")
+        return WAITING_SM_DP_LINK
     
     async def handle_sm_dp_for_link(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Xử lý SM-DP+ address cho tạo link"""
         sm_dp_address = update.message.text.strip()
+        logger.info(f"handle_sm_dp_for_link called with: {sm_dp_address}")
         
         # Validate SM-DP+ address
+        logger.info("Calling validate_sm_dp_address...")
         is_valid, message = esim_tools.validate_sm_dp_address(sm_dp_address)
+        logger.info(f"Validation result: {is_valid}, {message}")
         if not is_valid:
             await update.message.reply_text(
                 f"❌ {message}\n\nVui lòng nhập lại SM-DP+ Address hợp lệ:",
                 parse_mode=ParseMode.MARKDOWN
             )
-            return WAITING_SM_DP
+            return WAITING_SM_DP_LINK
         
         context.user_data['sm_dp_address'] = sm_dp_address
         
@@ -185,7 +189,7 @@ class eSIMBot:
             "Gửi `/cancel` để hủy",
             parse_mode=ParseMode.MARKDOWN
         )
-        return WAITING_ACTIVATION_CODE
+        return WAITING_ACTIVATION_CODE_LINK
     
     async def handle_activation_code_for_link(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Xử lý activation code cho tạo link"""
@@ -248,11 +252,12 @@ class eSIMBot:
             parse_mode=ParseMode.MARKDOWN
         )
         context.user_data['action'] = 'create_qr'
-        return WAITING_SM_DP
+        return WAITING_SM_DP_QR
     
     async def handle_sm_dp_for_qr(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Xử lý SM-DP+ address cho tạo QR"""
         sm_dp_address = update.message.text.strip()
+        logger.info(f"handle_sm_dp_for_qr called with: {sm_dp_address}")
         
         # Validate SM-DP+ address
         is_valid, message = esim_tools.validate_sm_dp_address(sm_dp_address)
@@ -261,7 +266,7 @@ class eSIMBot:
                 f"❌ {message}\n\nVui lòng nhập lại SM-DP+ Address hợp lệ:",
                 parse_mode=ParseMode.MARKDOWN
             )
-            return WAITING_SM_DP
+            return WAITING_SM_DP_QR
         
         context.user_data['sm_dp_address'] = sm_dp_address
         
@@ -272,7 +277,7 @@ class eSIMBot:
             "Gửi `/cancel` để hủy",
             parse_mode=ParseMode.MARKDOWN
         )
-        return WAITING_ACTIVATION_CODE
+        return WAITING_ACTIVATION_CODE_QR
     
     async def handle_activation_code_for_qr(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Xử lý activation code cho tạo QR"""
@@ -322,78 +327,201 @@ class eSIMBot:
         query = update.callback_query
         await query.edit_message_text(
             "🔍 **PHÂN TÍCH QR CODE eSIM**\n\n"
-            "Vui lòng gửi:\n"
-            "• 📷 Ảnh QR code\n"
-            "• 📋 Text data từ QR\n"
-            "• 🔗 Link eSIM\n\n"
-            "Gửi /cancel để hủy",
-            parse_mode=ParseMode.MARKDOWN
+            "Vui lòng chọn cách gửi QR code:\n\n"
+            "📝 **Gửi text:** Copy/paste dữ liệu QR\n"
+            "📸 **Gửi ảnh:** Chụp ảnh hoặc gửi file ảnh QR code",
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton("📝 Gửi Text", callback_data="qr_text"),
+                    InlineKeyboardButton("📸 Gửi Ảnh", callback_data="qr_image")
+                ],
+                [InlineKeyboardButton("🔙 Quay lại", callback_data="back_to_menu")]
+            ])
         )
         return WAITING_QR_DATA
-    
-    async def handle_qr_analysis(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Xử lý phân tích QR data"""
-        # TODO: Thêm xử lý ảnh QR code với thư viện pyzbar
-        if update.message.text:
-            qr_data = update.message.text.strip()
-        else:
-            await update.message.reply_text(
-                "❌ Chức năng đọc QR từ ảnh đang được phát triển.\n"
-                "Vui lòng gửi text data từ QR code.",
+
+    async def handle_qr_choice(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Xử lý lựa chọn phương thức gửi QR"""
+        query = update.callback_query
+        await query.answer()
+        
+        if query.data == "qr_text":
+            await query.edit_message_text(
+                "📝 **GỬI DỮ LIỆU QR CODE**\n\n"
+                "Vui lòng gửi dữ liệu QR code (text):\n\n"
+                "**Ví dụ:**\n"
+                "• `LPA:1$rsp.truphone.com$CODE123`\n"
+                "• `rsp.truphone.com`\n"
+                "• `https://esimsetup.apple.com/...`",
+                parse_mode=ParseMode.MARKDOWN,
                 reply_markup=self.get_back_keyboard()
             )
-            return ConversationHandler.END
+            return WAITING_QR_DATA
+            
+        elif query.data == "qr_image":
+            await query.edit_message_text(
+                "📸 **GỬI ẢNH QR CODE**\n\n"
+                "Vui lòng gửi ảnh chứa QR code eSIM:\n\n"
+                "📱 **Cách chụp tốt nhất:**\n"
+                "• Giữ máy thẳng, không bị nghiêng\n"
+                "• Đảm bảo ánh sáng đủ\n"
+                "• QR code chiếm toàn bộ khung hình\n"
+                "• Không bị mờ hoặc bóng\n\n"
+                "🖼️ **Hỗ trợ:** JPG, PNG, GIF",
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=self.get_back_keyboard()
+            )
+            return WAITING_QR_IMAGE
+            
+        return ConversationHandler.END
+
+    async def handle_qr_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Xử lý dữ liệu QR code được gửi dưới dạng text"""
+        qr_data = update.message.text.strip()
         
         try:
             # Log activity
-            logger.info(f"Analyzing QR for user {update.effective_user.id}")
+            logger.info(f"Analyzing QR data text for user {update.effective_user.id}: {qr_data}")
             
-            # Phân tích QR data
-            analysis = esim_tools.create_detailed_qr_info(qr_data)
+            # Phân tích data để hiển thị thông tin
+            analysis = esim_tools.extract_sm_dp_and_activation(qr_data)
             
-            response = f"🔍 **PHÂN TÍCH QR CODE eSIM**\n\n"
-            response += f"📋 **Dữ liệu gốc:** `{analysis['original_data'][:50]}...`\n"
-            response += f"📁 **Định dạng:** {analysis['format_type']}\n"
+            response = "🔍 **KẾT QUẢ PHÂN TÍCH QR CODE**\n\n"
             
             if analysis['sm_dp_address']:
                 response += f"📍 **SM-DP+ Address:** `{analysis['sm_dp_address']}`\n"
-            
             if analysis['activation_code']:
                 response += f"🔑 **Activation Code:** `{analysis['activation_code']}`\n"
             
-            response += f"✅ **Trạng thái:** {'Hợp lệ' if analysis['is_valid'] else 'Không hợp lệ'}\n\n"
+            response += f"\n📋 **Format:** {analysis['format_type'].upper()}\n"
+            response += f"🔗 **Dữ liệu gốc:**\n`{analysis['original_data'][:100]}{'...' if len(analysis['original_data']) > 100 else ''}`\n\n"
             
-            if analysis.get('install_methods'):
-                response += "**Phương thức cài đặt:**\n"
-                for method in analysis['install_methods']:
-                    response += f"• {method}\n"
-                response += "\n"
+            # Thêm link cài đặt nếu có thể
+            if analysis['sm_dp_address']:
+                try:
+                    install_link = esim_tools.create_iphone_install_link(
+                        analysis['sm_dp_address'], 
+                        analysis['activation_code']
+                    )
+                    response += f"🔗 **Link cài đặt iPhone:**\n{install_link}\n\n"
+                except:
+                    pass
             
-            if analysis.get('notes'):
-                response += "**Ghi chú:**\n"
-                for note in analysis['notes']:
-                    response += f"• {note}\n"
-            
-            # Tạo keyboard với options
-            keyboard = []
-            if analysis['is_valid']:
-                keyboard.append([
-                    InlineKeyboardButton("🔗 Tạo Link Cài", callback_data="link_from_qr"),
-                    InlineKeyboardButton("📱 Tạo QR Mới", callback_data="create_qr")
-                ])
-            keyboard.append([InlineKeyboardButton("🔙 Về Menu Chính", callback_data="back_to_menu")])
-            
-            reply_markup = InlineKeyboardMarkup(keyboard)
+            response += f"💡 **Hướng dẫn cài đặt:**\n"
+            response += f"📱 **iPhone:** Cài đặt → Cellular → Add Plan\n"
+            response += f"🤖 **Android:** Cài đặt → Network → SIM → Add\n\n"
+            response += f"✨ **Tương thích:** iPhone XS+ (iOS 12.1+), Android 9.0+"
             
             await update.message.reply_text(
                 response,
                 parse_mode=ParseMode.MARKDOWN,
-                reply_markup=reply_markup
+                reply_markup=self.get_back_keyboard()
             )
             
         except Exception as e:
             await update.message.reply_text(
-                f"❌ Lỗi phân tích QR: {str(e)}\n\nVui lòng kiểm tra lại dữ liệu!",
+                f"❌ **Lỗi phân tích QR text:** {str(e)}\n\n"
+                f"💡 **Gợi ý:**\n"
+                f"• Thử với dữ liệu khác\n"
+                f"• Gửi dữ liệu ảnh thay thế\n"
+                f"• Kiểm tra định dạng text (LPA:1$... hoặc SM-DP+ Address)",
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=self.get_back_keyboard()
+            )
+        
+        return ConversationHandler.END
+
+    async def handle_qr_image(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Xử lý ảnh QR code được gửi"""
+        try:
+            # Hiển thị đang xử lý
+            processing_msg = await update.message.reply_text(
+                "🔄 **Đang phân tích ảnh QR code...**\n\n"
+                "⏳ Vui lòng đợi trong giây lát...",
+                parse_mode=ParseMode.MARKDOWN
+            )
+            
+            # Lấy file ảnh lớn nhất
+            if update.message.photo:
+                file = await update.message.photo[-1].get_file()
+            elif update.message.document:
+                file = await update.message.document.get_file()
+            else:
+                await processing_msg.edit_text(
+                    "❌ **Lỗi:** Vui lòng gửi ảnh hoặc file ảnh!",
+                    parse_mode=ParseMode.MARKDOWN
+                )
+                return ConversationHandler.END
+            
+            # Download file
+            file_data = await file.download_as_bytearray()
+            
+            # Phân tích QR từ ảnh
+            analysis = esim_tools.analyze_qr_image(bytes(file_data))
+            
+            # Xóa message đang xử lý
+            await processing_msg.delete()
+            
+            if not analysis['qr_detected']:
+                await update.message.reply_text(
+                    f"❌ **KHÔNG ĐỌC ĐƯỢC QR CODE**\n\n"
+                    f"**Lỗi:** {analysis.get('error', 'Không xác định')}\n\n"
+                    f"💡 **Gợi ý:**\n"
+                    f"• Chụp ảnh rõ nét hơn\n"
+                    f"• Đảm bảo QR code không bị cắt\n"
+                    f"• Thử với ánh sáng tốt hơn\n"
+                    f"• Hoặc gửi dữ liệu text thay thế",
+                    parse_mode=ParseMode.MARKDOWN,
+                    reply_markup=self.get_back_keyboard()
+                )
+                return ConversationHandler.END
+            
+            # Hiển thị kết quả phân tích
+            response = "🔍 **KẾT QUẢ PHÂN TÍCH QR CODE**\n\n"
+            response += f"📱 **Nguồn:** Ảnh QR code\n"
+            response += f"✅ **Trạng thái:** Đọc thành công\n\n"
+            
+            response += f"📍 **SM-DP+ Address:**\n`{analysis['sm_dp_address']}`\n\n"
+            
+            if analysis['activation_code']:
+                response += f"🔑 **Activation Code:**\n`{analysis['activation_code']}`\n\n"
+            else:
+                response += f"🔑 **Activation Code:** _Không có_\n\n"
+                
+            response += f"📋 **Format:** {analysis['format_type'].upper()}\n"
+            response += f"🔗 **Dữ liệu gốc:**\n`{analysis['original_data'][:100]}{'...' if len(analysis['original_data']) > 100 else ''}`\n\n"
+            
+            # Thêm link cài đặt nếu có thể
+            if analysis['sm_dp_address']:
+                try:
+                    install_link = esim_tools.create_iphone_install_link(
+                        analysis['sm_dp_address'], 
+                        analysis['activation_code']
+                    )
+                    response += f"🔗 **Link cài đặt iPhone:**\n{install_link}\n\n"
+                except:
+                    pass
+            
+            response += f"💡 **Hướng dẫn cài đặt:**\n"
+            response += f"📱 **iPhone:** Cài đặt → Cellular → Add Plan\n"
+            response += f"🤖 **Android:** Cài đặt → Network → SIM → Add\n\n"
+            response += f"✨ **Tương thích:** iPhone XS+ (iOS 12.1+), Android 9.0+"
+            
+            await update.message.reply_text(
+                response,
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=self.get_back_keyboard()
+            )
+            
+        except Exception as e:
+            await update.message.reply_text(
+                f"❌ **Lỗi xử lý ảnh:** {str(e)}\n\n"
+                f"💡 **Gợi ý:**\n"
+                f"• Thử với ảnh khác\n"
+                f"• Gửi dữ liệu text thay thế\n"
+                f"• Kiểm tra định dạng ảnh (JPG/PNG)",
+                parse_mode=ParseMode.MARKDOWN,
                 reply_markup=self.get_back_keyboard()
             )
         
@@ -554,6 +682,11 @@ Gửi /cancel để hủy thao tác hiện tại
             reply_markup=self.get_back_keyboard()
         )
     
+    async def debug_message_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Debug handler để log tất cả messages"""
+        logger.info(f"DEBUG: Received message: {update.message.text} from user {update.effective_user.id}")
+        logger.info(f"DEBUG: Current conversation state: {context.user_data}")
+    
     def setup_handlers(self):
         """Thiết lập các handlers cho bot"""
         # Command handlers
@@ -564,8 +697,8 @@ Gửi /cancel để hủy thao tác hiện tại
         create_link_handler = ConversationHandler(
             entry_points=[CallbackQueryHandler(self.start_create_link, pattern="^create_link$")],
             states={
-                WAITING_SM_DP: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_sm_dp_for_link)],
-                WAITING_ACTIVATION_CODE: [MessageHandler(filters.TEXT, self.handle_activation_code_for_link)]
+                WAITING_SM_DP_LINK: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_sm_dp_for_link)],
+                WAITING_ACTIVATION_CODE_LINK: [MessageHandler(filters.TEXT, self.handle_activation_code_for_link)]
             },
             fallbacks=[CommandHandler("cancel", self.cancel)],
             per_message=False,
@@ -577,8 +710,8 @@ Gửi /cancel để hủy thao tác hiện tại
         create_qr_handler = ConversationHandler(
             entry_points=[CallbackQueryHandler(self.start_create_qr, pattern="^create_qr$")],
             states={
-                WAITING_SM_DP: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_sm_dp_for_qr)],
-                WAITING_ACTIVATION_CODE: [MessageHandler(filters.TEXT, self.handle_activation_code_for_qr)]
+                WAITING_SM_DP_QR: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_sm_dp_for_qr)],
+                WAITING_ACTIVATION_CODE_QR: [MessageHandler(filters.TEXT, self.handle_activation_code_for_qr)]
             },
             fallbacks=[CommandHandler("cancel", self.cancel)],
             per_message=False,
@@ -590,7 +723,11 @@ Gửi /cancel để hủy thao tác hiện tại
         analyze_qr_handler = ConversationHandler(
             entry_points=[CallbackQueryHandler(self.start_analyze_qr, pattern="^analyze_qr$")],
             states={
-                WAITING_QR_DATA: [MessageHandler(filters.TEXT | filters.PHOTO, self.handle_qr_analysis)]
+                WAITING_QR_DATA: [
+                    CallbackQueryHandler(self.handle_qr_choice, pattern="^qr_(text|image)$"),
+                    MessageHandler(filters.TEXT, self.handle_qr_text)
+                ],
+                WAITING_QR_IMAGE: [MessageHandler(filters.PHOTO | filters.Document.ALL, self.handle_qr_image)]
             },
             fallbacks=[CommandHandler("cancel", self.cancel)],
             per_message=False,
@@ -618,6 +755,9 @@ Gửi /cancel để hủy thao tác hiện tại
         
         # Button callback handler
         self.application.add_handler(CallbackQueryHandler(self.button_handler))
+        
+        # Debug message handler (thêm cuối cùng để catch tất cả)
+        self.application.add_handler(MessageHandler(filters.TEXT, self.debug_message_handler), group=1)
     
     async def set_bot_commands(self):
         """Thiết lập menu commands cho bot"""

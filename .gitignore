@@ -2,7 +2,7 @@
 __pycache__/
 *.py[cod]
 *$py.class
-
+test_tools.py
 # C extensions
 *.so
 
@@ -117,3 +117,4 @@ Thumbs.db
 # Bot token (bảo mật)
 config_local.py
 .env.local 
+config.py
