@@ -6,9 +6,11 @@ Bot Telegram hỗ trợ cài đặt eSIM cho iPhone và Android với các công
 
 ### 🔧 Công cụ eSIM
 - **🔗 Tạo Link Cài eSIM** - Tạo link cài đặt nhanh cho iPhone từ SM-DP+ address
-- **📱 Tạo QR Code** - Tạo QR code eSIM từ SM-DP+ address và mã kích hoạt  
+- **📱 Tạo QR Code** - Tạo QR code eSIM từ SM-DP+ address và mã kích hoạt
+- **📝 Từ LPA String (mới)** - Nhập LPA string để tạo link/QR trực tiếp
 - **🔍 Phân Tích QR** - Tách thông tin SM-DP+ và activation code từ QR code
 - **📋 Link từ QR** - Chuyển đổi QR code thành link cài đặt
+- **🏪 Kho eSIM (mới)** - Lưu eSIM, tạo QR/link từ kho, tự động chuyển sang mục đã dùng
 
 ### 📱 Hỗ trợ thiết bị
 - **iPhone:** XS/XR trở lên (iOS 12.1+)
@@ -47,6 +49,12 @@ cp config.example.py config.py
 Hoặc sử dụng environment variables:
 ```bash
 export BOT_TOKEN="your_bot_token_here"
+```
+
+Thiết lập quyền admin (chỉ admin mới dùng được bot):
+```python
+# Trong config.py
+ADMIN_IDS = [123456789]  # Telegram user_id của bạn
 ```
 
 ### 5. Chạy bot
@@ -88,16 +96,29 @@ python bot.py
 2. Gửi dữ liệu QR (LPA string, SM-DP+ address, URL)
 3. Nhận link cài đặt cho iPhone
 
+### Tạo Link/QR từ LPA String (mới)
+1. Chọn **📝 Từ LPA String**
+2. Dán LPA string: `LPA:1$sm-dp.example.com$CODE123`
+3. Nhận link cài đặt và ảnh QR để quét
+
+### Quản lý Kho eSIM (mới)
+1. Chọn **🏪 Kho eSIM**
+2. Các thao tác:
+   - **➕ Thêm eSIM**: bằng LPA string hoặc SM-DP+ + code
+   - **🎯 Sử dụng eSIM**: chọn eSIM để tạo QR/link; eSIM sẽ chuyển sang mục Đã dùng
+   - **📋 Xem Kho**: danh sách eSIM khả dụng
+   - **📊 eSIM Đã dùng**: lịch sử đã sử dụng (ai dùng, thời gian)
+
 ## 🔧 Cấu trúc dự án
 
 ```
-esim-tool/
+esim tool/
 ├── bot.py              # Bot Telegram chính
-├── config.py           # Cấu hình bot
-├── database.py         # Quản lý database SQLite
-├── esim_tools.py       # Các công cụ xử lý eSIM
+├── config.py           # Cấu hình bot (KHÔNG commit token thật)
+├── esim_storage.py     # Quản lý kho eSIM (SQLite)
+├── esim_tools.py       # Công cụ xử lý eSIM (link, QR, phân tích)
 ├── requirements.txt    # Thư viện Python
-└── README.md          # Tài liệu này
+└── README.md           # Tài liệu này
 ```
 
 ## 📱 Các định dạng eSIM được hỗ trợ
@@ -140,41 +161,32 @@ Tách thông tin từ QR data
 Kiểm tra tính hợp lệ của SM-DP+ address
 - **Returns**: (bool, message)
 
-## 🗄️ Database Schema
+## 🗄️ Database Schema (Kho eSIM)
 
-### Users Table
-```sql
-CREATE TABLE users (
-    user_id INTEGER PRIMARY KEY,
-    username TEXT,
-    first_name TEXT,
-    last_name TEXT,
-    device_type TEXT,
-    device_model TEXT,
-    created_at TIMESTAMP,
-    last_active TIMESTAMP
-);
-```
+File: `esim_storage.db`
 
-### eSIM Requests Table
 ```sql
-CREATE TABLE esim_requests (
-    id INTEGER PRIMARY KEY,
-    user_id INTEGER,
-    provider TEXT,
-    country TEXT,
-    plan_type TEXT,
-    status TEXT,
-    request_date TIMESTAMP
+CREATE TABLE IF NOT EXISTS esim_entries (
+    id TEXT PRIMARY KEY,
+    sm_dp_address TEXT NOT NULL,
+    activation_code TEXT,
+    description TEXT,
+    added_date TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'available', -- available | used
+    used_date TEXT,
+    used_by TEXT,
+    lpa_string TEXT
 );
+
+CREATE INDEX IF NOT EXISTS idx_status ON esim_entries(status);
+CREATE INDEX IF NOT EXISTS idx_added_date ON esim_entries(added_date);
 ```
 
 ## 🔒 Bảo mật
 
-- Bot token được bảo vệ qua environment variables
-- Admin commands chỉ cho phép user được ủy quyền
-- Dữ liệu người dùng được mã hóa trong database
-- Validation đầu vào để tránh injection attacks
+- Chỉ user có mặt trong `ADMIN_IDS` mới sử dụng được bot (toàn bộ tính năng)
+- Token bot: dùng env var hoặc `config.py` (đừng commit token thật)
+- Input validation: kiểm tra LPA/SM-DP+ trước khi xử lý
 
 ## 🚨 Khắc phục sự cố
 
@@ -197,8 +209,8 @@ python -u bot.py
 
 ### Database lỗi
 ```bash
-# Xóa database cũ
-rm esim_bot.db
+# Xóa database kho cũ (nếu cần reset)
+rm esim_storage.db
 
 # Khởi động lại bot
 python bot.py
@@ -222,12 +234,17 @@ MIT License - Xem file LICENSE để biết chi tiết.
 
 ## 🔄 Changelog
 
+### v1.1.0 (2025)
+- ✅ Thêm LPA string: tạo link và QR trực tiếp từ LPA
+- ✅ Kho eSIM: thêm/sử dụng/theo dõi, tự chuyển sang Đã dùng
+- ✅ Chỉ admin (ADMIN_IDS) mới dùng được bot
+- ✅ Cải thiện xử lý editMessage khi nguồn là ảnh (fallback sendMessage)
+
 ### v1.0.0 (2024)
 - ✅ Tạo link cài eSIM cho iPhone
 - ✅ Tạo QR code từ SM-DP+ address
 - ✅ Phân tích và tách thông tin QR
 - ✅ Chuyển đổi QR thành link cài đặt
-- ✅ Database SQLite
 - ✅ Hướng dẫn cài đặt chi tiết
 
 ## 🚀 Roadmap

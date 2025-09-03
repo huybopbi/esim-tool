@@ -1,6 +1,7 @@
 import re
 import urllib.parse
 import qrcode
+import base64
 from io import BytesIO
 from PIL import Image
 from typing import Dict, Tuple
@@ -60,6 +61,36 @@ class eSIMTools:
             return bio, lpa_string
         except Exception as e:
             raise Exception(f"Lỗi tạo QR code: {e}")
+
+    def create_qr_from_lpa(self, lpa_string: str) -> Tuple[BytesIO, str]:
+        """Tạo QR code trực tiếp từ LPA string"""
+        try:
+            # Validate LPA string
+            is_valid, message = self.validate_lpa_string(lpa_string)
+            if not is_valid:
+                raise ValueError(message)
+
+            # Create QR code
+            qr = qrcode.QRCode(
+                version=1,
+                error_correction=qrcode.constants.ERROR_CORRECT_L,
+                box_size=10,
+                border=4,
+            )
+            qr.add_data(lpa_string)
+            qr.make(fit=True)
+
+            # Create image
+            img = qr.make_image(fill_color="black", back_color="white")
+
+            # Convert to BytesIO
+            bio = BytesIO()
+            img.save(bio, format='PNG')
+            bio.seek(0)
+
+            return bio, lpa_string
+        except Exception as e:
+            raise Exception(f"Lỗi tạo QR từ LPA string: {e}")
     
     def create_install_link_from_qr(self, qr_data: str) -> str:
         """Tạo link cài đặt từ dữ liệu QR code"""
@@ -168,6 +199,21 @@ class eSIMTools:
             return False, "SM-DP+ address có độ dài không hợp lệ"
         
         return True, "SM-DP+ address hợp lệ"
+
+    def validate_lpa_string(self, lpa_string: str) -> Tuple[bool, str]:
+        """Kiểm tra tính hợp lệ của LPA string."""
+        if not lpa_string or not lpa_string.strip():
+            return False, "LPA string không được để trống"
+
+        lpa_string = lpa_string.strip()
+
+        # LPA string must start with LPA:1$
+        lpa_pattern = r'^LPA:1\$([^$]+)\$(.*)$'
+        
+        if not re.match(lpa_pattern, lpa_string):
+            return False, "LPA string không hợp lệ. Cần có định dạng LPA:1$SMDP_ADDRESS$CODE"
+
+        return True, "LPA string hợp lệ"
     
     def create_detailed_qr_info(self, qr_data: str) -> Dict:
         """Tạo thông tin chi tiết về QR code"""
