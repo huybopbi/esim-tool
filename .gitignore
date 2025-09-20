@@ -87,7 +87,8 @@ venv/
 ENV/
 env.bak/
 venv.bak/
-
+config.py
+esim_storage.db
 # Spyder project settings
 .spyderproject
 .spyproject
