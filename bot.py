@@ -24,6 +24,21 @@ class eSIMBot:
     def __init__(self):
         self.application = None
     
+    def admin_required(func):
+        """Decorator để kiểm tra admin access cho callback handlers"""
+        async def wrapper(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+            user_id = update.effective_user.id
+            if user_id not in ADMIN_IDS:
+                await self._unauthorized_reply(update)
+                return ConversationHandler.END
+            return await func(self, update, context)
+        return wrapper
+    
+    def _check_admin_access(self, update: Update):
+        """Kiểm tra xem user có phải admin không"""
+        user_id = update.effective_user.id
+        return user_id in ADMIN_IDS
+    
     async def _unauthorized_reply(self, update: Update, text: str = None):
         try:
             message = text or "❌ Bot chỉ dành cho chủ bot. Truy cập bị từ chối."
@@ -42,13 +57,21 @@ class eSIMBot:
 
     async def unauthorized_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Chặn mọi callback từ người không có quyền"""
-        await self._unauthorized_reply(update)
-        return ConversationHandler.END
+        user_id = update.effective_user.id
+        callback_data = update.callback_query.data if update.callback_query else "Unknown"
+        logger.info(f"unauthorized_callback triggered for user {user_id}, callback_data: {callback_data}")
+        logger.info(f"User is admin: {user_id in ADMIN_IDS}")
+        
+        if user_id not in ADMIN_IDS:
+            await self._unauthorized_reply(update)
+            return ConversationHandler.END
 
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handler cho command /start"""
         user = update.effective_user
         logger.info(f"User {user.id} ({user.username}) started the bot")
+        logger.info(f"Admin IDs configured: {ADMIN_IDS}")
+        logger.info(f"User is admin: {user.id in ADMIN_IDS}")
         
         # Tạo keyboard menu chính
         keyboard = [
@@ -83,6 +106,16 @@ class eSIMBot:
     
     async def button_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handler cho các button callback"""
+        # Kiểm tra admin access
+        user_id = update.effective_user.id
+        callback_data = update.callback_query.data if update.callback_query else "Unknown"
+        logger.info(f"button_handler triggered for user {user_id}, callback_data: {callback_data}")
+        logger.info(f"User is admin: {user_id in ADMIN_IDS}")
+        
+        if user_id not in ADMIN_IDS:
+            await self._unauthorized_reply(update)
+            return
+            
         query = update.callback_query
         await query.answer()
         
@@ -1447,6 +1480,24 @@ Gửi /cancel để hủy thao tác hiện tại
             reply_markup=self.get_back_keyboard()
         )
     
+    async def get_user_id(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handler để lấy user ID cho debug"""
+        user = update.effective_user
+        response = f"🆔 **THÔNG TIN USER**\n\n"
+        response += f"**User ID:** `{user.id}`\n"
+        response += f"**Username:** @{user.username}\n"
+        response += f"**First Name:** {user.first_name}\n"
+        if user.last_name:
+            response += f"**Last Name:** {user.last_name}\n"
+        response += f"\n**Admin IDs configured:** `{ADMIN_IDS}`\n"
+        response += f"**Is Admin:** {'✅ Yes' if user.id in ADMIN_IDS else '❌ No'}\n\n"
+        response += "Copy User ID trên để cấu hình admin trong file config.py"
+        
+        await update.message.reply_text(
+            response,
+            parse_mode=ParseMode.MARKDOWN
+        )
+    
     async def debug_message_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Debug handler để log tất cả messages"""
         logger.info(f"DEBUG: Received message: {update.message.text} from user {update.effective_user.id}")
@@ -1458,22 +1509,27 @@ Gửi /cancel để hủy thao tác hiện tại
         admin_filter = filters.User(user_id=ADMIN_IDS)
         non_admin_filter = ~filters.User(user_id=ADMIN_IDS)
 
+        # Log admin IDs để debug
+        logger.info(f"Configured admin IDs: {ADMIN_IDS}")
+
         # Global unauthorized handlers (registered first)
         self.application.add_handler(MessageHandler(non_admin_filter, self.unauthorized_message), group=0)
-        self.application.add_handler(CallbackQueryHandler(self.unauthorized_callback), group=0)
 
         # Command handlers (admin only)
         self.application.add_handler(CommandHandler("start", self.start, filters=admin_filter))
         self.application.add_handler(CommandHandler("help", self.help_command, filters=admin_filter))
         
+        # Debug command để kiểm tra user ID (không cần filter admin)
+        self.application.add_handler(CommandHandler("myid", self.get_user_id))
+        
         # Conversation handler cho tạo link
         create_link_handler = ConversationHandler(
             entry_points=[CallbackQueryHandler(self.start_create_link, pattern="^create_link$")],
             states={
-                WAITING_SM_DP_LINK: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_sm_dp_for_link)],
-                WAITING_ACTIVATION_CODE_LINK: [MessageHandler(filters.TEXT, self.handle_activation_code_for_link)]
+                WAITING_SM_DP_LINK: [MessageHandler(filters.TEXT & ~filters.COMMAND & admin_filter, self.handle_sm_dp_for_link)],
+                WAITING_ACTIVATION_CODE_LINK: [MessageHandler(filters.TEXT & admin_filter, self.handle_activation_code_for_link)]
             },
-            fallbacks=[CommandHandler("cancel", self.cancel)],
+            fallbacks=[CommandHandler("cancel", self.cancel, filters=admin_filter)],
             per_message=False,
             per_chat=True,
             per_user=True
@@ -1483,10 +1539,10 @@ Gửi /cancel để hủy thao tác hiện tại
         create_qr_handler = ConversationHandler(
             entry_points=[CallbackQueryHandler(self.start_create_qr, pattern="^create_qr$")],
             states={
-                WAITING_SM_DP_QR: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_sm_dp_for_qr)],
-                WAITING_ACTIVATION_CODE_QR: [MessageHandler(filters.TEXT, self.handle_activation_code_for_qr)]
+                WAITING_SM_DP_QR: [MessageHandler(filters.TEXT & ~filters.COMMAND & admin_filter, self.handle_sm_dp_for_qr)],
+                WAITING_ACTIVATION_CODE_QR: [MessageHandler(filters.TEXT & admin_filter, self.handle_activation_code_for_qr)]
             },
-            fallbacks=[CommandHandler("cancel", self.cancel)],
+            fallbacks=[CommandHandler("cancel", self.cancel, filters=admin_filter)],
             per_message=False,
             per_chat=True,
             per_user=True
@@ -1498,11 +1554,11 @@ Gửi /cancel để hủy thao tác hiện tại
             states={
                 WAITING_QR_DATA: [
                     CallbackQueryHandler(self.handle_qr_choice, pattern="^qr_(text|image)$"),
-                    MessageHandler(filters.TEXT, self.handle_qr_text)
+                    MessageHandler(filters.TEXT & admin_filter, self.handle_qr_text)
                 ],
-                WAITING_QR_IMAGE: [MessageHandler(filters.PHOTO | filters.Document.ALL, self.handle_qr_image)]
+                WAITING_QR_IMAGE: [MessageHandler((filters.PHOTO | filters.Document.ALL) & admin_filter, self.handle_qr_image)]
             },
-            fallbacks=[CommandHandler("cancel", self.cancel)],
+            fallbacks=[CommandHandler("cancel", self.cancel, filters=admin_filter)],
             per_message=False,
             per_chat=True,
             per_user=True
@@ -1512,9 +1568,9 @@ Gửi /cancel để hủy thao tác hiện tại
         link_from_qr_handler = ConversationHandler(
             entry_points=[CallbackQueryHandler(self.start_link_from_qr, pattern="^link_from_qr$")],
             states={
-                WAITING_QR_DATA: [MessageHandler(filters.TEXT, self.handle_link_from_qr)]
+                WAITING_QR_DATA: [MessageHandler(filters.TEXT & admin_filter, self.handle_link_from_qr)]
             },
-            fallbacks=[CommandHandler("cancel", self.cancel)],
+            fallbacks=[CommandHandler("cancel", self.cancel, filters=admin_filter)],
             per_message=False,
             per_chat=True,
             per_user=True
@@ -1524,9 +1580,9 @@ Gửi /cancel để hủy thao tác hiện tại
         lpa_string_handler = ConversationHandler(
             entry_points=[CallbackQueryHandler(self.start_from_lpa_string, pattern="^from_lpa_string$")],
             states={
-                WAITING_LPA_STRING: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_lpa_string)]
+                WAITING_LPA_STRING: [MessageHandler(filters.TEXT & ~filters.COMMAND & admin_filter, self.handle_lpa_string)]
             },
-            fallbacks=[CommandHandler("cancel", self.cancel)],
+            fallbacks=[CommandHandler("cancel", self.cancel, filters=admin_filter)],
             per_message=False,
             per_chat=True,
             per_user=True
@@ -1540,13 +1596,13 @@ Gửi /cancel để hủy thao tác hiện tại
                 CallbackQueryHandler(self.start_add_esim_smdp, pattern="^add_esim_smdp$")
             ],
             states={
-                WAITING_ADD_ESIM_SM_DP: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_add_esim_sm_dp)],
-                WAITING_ADD_ESIM_CODE: [MessageHandler(filters.TEXT, self.handle_add_esim_code)],
-                WAITING_ADD_ESIM_DESC: [MessageHandler(filters.TEXT, self.handle_add_esim_desc)],
-                WAITING_ADD_ESIM_LPA: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_add_esim_lpa)],
-                WAITING_ADD_ESIM_LPA_DESC: [MessageHandler(filters.TEXT, self.handle_add_esim_lpa_desc)]
+                WAITING_ADD_ESIM_SM_DP: [MessageHandler(filters.TEXT & ~filters.COMMAND & admin_filter, self.handle_add_esim_sm_dp)],
+                WAITING_ADD_ESIM_CODE: [MessageHandler(filters.TEXT & admin_filter, self.handle_add_esim_code)],
+                WAITING_ADD_ESIM_DESC: [MessageHandler(filters.TEXT & admin_filter, self.handle_add_esim_desc)],
+                WAITING_ADD_ESIM_LPA: [MessageHandler(filters.TEXT & ~filters.COMMAND & admin_filter, self.handle_add_esim_lpa)],
+                WAITING_ADD_ESIM_LPA_DESC: [MessageHandler(filters.TEXT & admin_filter, self.handle_add_esim_lpa_desc)]
             },
-            fallbacks=[CommandHandler("cancel", self.cancel)],
+            fallbacks=[CommandHandler("cancel", self.cancel, filters=admin_filter)],
             per_message=False,
             per_chat=True,
             per_user=True
@@ -1558,7 +1614,7 @@ Gửi /cancel để hủy thao tác hiện tại
             states={
                 WAITING_ESIM_SELECTION: [CallbackQueryHandler(self.handle_esim_selection, pattern="^select_esim_")]
             },
-            fallbacks=[CommandHandler("cancel", self.cancel)],
+            fallbacks=[CommandHandler("cancel", self.cancel, filters=admin_filter)],
             per_message=False,
             per_chat=True,
             per_user=True
@@ -1576,8 +1632,11 @@ Gửi /cancel để hủy thao tác hiện tại
         # Button callback handler
         self.application.add_handler(CallbackQueryHandler(self.button_handler), group=1)
         
+        # Catch all unauthorized callbacks (phải đặt ở group thấp hơn)
+        self.application.add_handler(CallbackQueryHandler(self.unauthorized_callback), group=2)
+        
         # Debug message handler (thêm cuối cùng để catch tất cả)
-        self.application.add_handler(MessageHandler(filters.TEXT & admin_filter, self.debug_message_handler), group=2)
+        self.application.add_handler(MessageHandler(filters.TEXT & admin_filter, self.debug_message_handler), group=3)
     
     async def set_bot_commands(self):
         """Thiết lập menu commands cho bot"""
