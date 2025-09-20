@@ -7,7 +7,15 @@ from PIL import Image
 from typing import Dict, Tuple
 import cv2
 import numpy as np
-from pyzbar import pyzbar
+
+# Try to import pyzbar (optional dependency)
+try:
+    from pyzbar import pyzbar
+    PYZBAR_AVAILABLE = True
+except (ImportError, FileNotFoundError) as e:
+    print(f"⚠️ Warning: pyzbar not available - QR image analysis disabled: {e}")
+    PYZBAR_AVAILABLE = False
+    pyzbar = None
 
 from config import IPHONE_ESIM_MODELS, ANDROID_ESIM_BRANDS
 
@@ -286,6 +294,9 @@ class eSIMTools:
     
     def decode_qr_from_image(self, image_data: bytes) -> str:
         """Đọc QR code từ dữ liệu ảnh"""
+        if not PYZBAR_AVAILABLE:
+            raise Exception("Tính năng đọc QR từ ảnh không khả dụng - thiếu thư viện pyzbar")
+            
         try:
             # Convert bytes to numpy array
             nparr = np.frombuffer(image_data, np.uint8)
@@ -377,4 +388,7 @@ class eSIMTools:
         return False, f"⚠️ {brand_clean} có ít model hỗ trợ eSIM. Kiểm tra trong Cài đặt → Mạng & Internet → SIM."
 
 # Khởi tạo eSIM tools
-esim_tools = eSIMTools() 
+esim_tools = eSIMTools()
+
+# Export availability flag
+__all__ = ['esim_tools', 'PYZBAR_AVAILABLE'] 
