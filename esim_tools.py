@@ -156,8 +156,9 @@ class eSIMTools:
                     except:
                         pass
                 
+                # Don't treat URL as SM-DP+ address - return empty to trigger image download
                 result['format_type'] = 'URL'
-                result['sm_dp_address'] = qr_data
+                # result['sm_dp_address'] = qr_data  # Removed - let caller handle URL
                 return result
             
             # Kiểm tra nếu là SM-DP+ address thuần
@@ -294,9 +295,6 @@ class eSIMTools:
     
     def decode_qr_from_image(self, image_data: bytes) -> str:
         """Đọc QR code từ dữ liệu ảnh"""
-        if not PYZBAR_AVAILABLE:
-            raise Exception("Tính năng đọc QR từ ảnh không khả dụng - thiếu thư viện pyzbar")
-            
         try:
             # Convert bytes to numpy array
             nparr = np.frombuffer(image_data, np.uint8)
@@ -306,22 +304,50 @@ class eSIMTools:
             if img is None:
                 raise Exception("Không thể đọc ảnh")
             
-            # Convert to grayscale for better QR detection
+            # Method 1: Try pyzbar first (faster and more reliable)
+            if PYZBAR_AVAILABLE:
+                try:
+                    # Convert to grayscale for better QR detection
+                    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+                    
+                    # Decode QR codes
+                    qr_codes = pyzbar.decode(gray)
+                    
+                    if not qr_codes:
+                        # Thử với ảnh gốc nếu grayscale không work
+                        qr_codes = pyzbar.decode(img)
+                    
+                    if qr_codes:
+                        # Lấy QR code đầu tiên
+                        qr_data = qr_codes[0].data.decode('utf-8')
+                        return qr_data
+                except Exception as e:
+                    print(f"⚠️ pyzbar failed: {e}, trying OpenCV fallback...")
+            
+            # Method 2: Fallback to OpenCV QRCodeDetector
+            qr_detector = cv2.QRCodeDetector()
+            
+            # Try with original image
+            data, bbox, straight_qrcode = qr_detector.detectAndDecode(img)
+            
+            if data:
+                return data
+            
+            # Try with grayscale
             gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            data, bbox, straight_qrcode = qr_detector.detectAndDecode(gray)
             
-            # Decode QR codes
-            qr_codes = pyzbar.decode(gray)
+            if data:
+                return data
             
-            if not qr_codes:
-                # Thử với ảnh gốc nếu grayscale không work
-                qr_codes = pyzbar.decode(img)
+            # Try with enhanced contrast
+            enhanced = cv2.equalizeHist(gray)
+            data, bbox, straight_qrcode = qr_detector.detectAndDecode(enhanced)
             
-            if not qr_codes:
-                raise Exception("Không tìm thấy QR code trong ảnh")
+            if data:
+                return data
             
-            # Lấy QR code đầu tiên
-            qr_data = qr_codes[0].data.decode('utf-8')
-            return qr_data
+            raise Exception("Không tìm thấy QR code trong ảnh")
             
         except Exception as e:
             raise Exception(f"Lỗi đọc QR từ ảnh: {e}")
