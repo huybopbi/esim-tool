@@ -13,7 +13,7 @@ try:
     from pyzbar import pyzbar
     PYZBAR_AVAILABLE = True
 except (ImportError, FileNotFoundError) as e:
-    print(f"⚠️ Warning: pyzbar not available - QR image analysis disabled: {e}")
+    # Không print warning vì có thể gây lỗi encoding trên Windows
     PYZBAR_AVAILABLE = False
     pyzbar = None
 

@@ -1,6 +1,12 @@
 import logging
 import asyncio
 import warnings
+
+# Suppress các warnings không cần thiết
+warnings.filterwarnings("ignore", message=".*per_message.*", category=UserWarning)
+warnings.filterwarnings("ignore", message=".*pkg_resources.*", category=UserWarning)
+warnings.filterwarnings("ignore", category=DeprecationWarning)
+
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ConversationHandler, filters, ContextTypes
 from telegram.constants import ParseMode
@@ -10,11 +16,7 @@ from io import BytesIO
 from config import BOT_TOKEN, MESSAGES, ADMIN_IDS
 from esim_tools import esim_tools
 from esim_storage import esim_storage
-
-# Suppress PTBUserWarning về per_message settings
-# Bot architecture cần mixed handlers (CallbackQueryHandler + MessageHandler + CommandHandler)
-# Không thể tránh warning này mà vẫn giữ được functionality
-warnings.filterwarnings("ignore", message=".*per_message.*", category=UserWarning)
+from simplifytrip_api import simplifytrip_api
 
 # Logging setup - Clean và chỉ hiển thị thông tin quan trọng
 logging.basicConfig(
@@ -30,7 +32,7 @@ logging.getLogger('telegram.ext.Application').setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 # States cho conversation handlers
-WAITING_SM_DP_LINK, WAITING_ACTIVATION_CODE_LINK, WAITING_SM_DP_QR, WAITING_ACTIVATION_CODE_QR, WAITING_QR_DATA, WAITING_QR_IMAGE, WAITING_LPA_STRING, WAITING_ADD_ESIM_SM_DP, WAITING_ADD_ESIM_CODE, WAITING_ADD_ESIM_DESC, WAITING_ESIM_SELECTION, WAITING_ADD_ESIM_LPA, WAITING_ADD_ESIM_LPA_DESC, WAITING_ADD_ESIM_URL, WAITING_ADD_ESIM_URL_DESC = range(15)
+WAITING_SM_DP_LINK, WAITING_ACTIVATION_CODE_LINK, WAITING_SM_DP_QR, WAITING_ACTIVATION_CODE_QR, WAITING_QR_DATA, WAITING_QR_IMAGE, WAITING_LPA_STRING, WAITING_ADD_ESIM_SM_DP, WAITING_ADD_ESIM_CODE, WAITING_ADD_ESIM_DESC, WAITING_ESIM_SELECTION, WAITING_ADD_ESIM_LPA, WAITING_ADD_ESIM_LPA_DESC, WAITING_ADD_ESIM_URL, WAITING_ADD_ESIM_URL_DESC, WAITING_ICCID = range(16)
 
 class eSIMBot:
     def __init__(self):
@@ -76,15 +78,19 @@ class eSIMBot:
             return ConversationHandler.END
 
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handler cho command /start"""
+        """Handler cho command /start - mọi người đều dùng được"""
         user = update.effective_user
-        logger.info(f"User {user.username or user.id} started the bot")
+        is_admin = user.id in ADMIN_IDS
+        logger.info(f"[START] User: {user.username or user.id} | Admin: {is_admin}")
         
-        # Tạo keyboard menu chính
+        # Hiển thị menu đầy đủ cho tất cả mọi người
         keyboard = [
             [
                 InlineKeyboardButton("🔗 Tạo Link & QR", callback_data="create_link_qr"),
                 InlineKeyboardButton("🏪 Kho eSIM", callback_data="storage_menu")
+            ],
+            [
+                InlineKeyboardButton("🔍 Check ICCID", callback_data="check_iccid")
             ]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -97,19 +103,28 @@ class eSIMBot:
     
     async def button_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handler cho các button callback"""
-        # Kiểm tra admin access
         user_id = update.effective_user.id
+        is_admin = user_id in ADMIN_IDS
         
-        if user_id not in ADMIN_IDS:
-            await self._unauthorized_reply(update)
-            return
-            
         query = update.callback_query
         await query.answer()
         
+        # Check ICCID - mọi người đều dùng được
+        if query.data == "check_iccid":
+            await self.start_check_iccid(update, context)
+            return
+        
+        # Tạo Link & QR - mọi người đều dùng được
         if query.data == "create_link_qr":
             await self.start_create_link_qr(update, context)
-        elif query.data == "storage_menu":
+            return
+        
+        # Các chức năng khác (Kho eSIM) - chỉ admin mới dùng được
+        if not is_admin:
+            await self._unauthorized_reply(update)
+            return
+        
+        if query.data == "storage_menu":
             await self.show_storage_menu(update, context)
         elif query.data == "check_device":
             await self.start_check_device(update, context)
@@ -162,11 +177,15 @@ class eSIMBot:
         ])
     
     async def show_main_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Hiển thị menu chính"""
+        """Hiển thị menu chính - đầy đủ cho tất cả mọi người"""
+        # Hiển thị menu đầy đủ cho tất cả
         keyboard = [
             [
                 InlineKeyboardButton("🔗 Tạo Link & QR", callback_data="create_link_qr"),
                 InlineKeyboardButton("🏪 Kho eSIM", callback_data="storage_menu")
+            ],
+            [
+                InlineKeyboardButton("🔍 Check ICCID", callback_data="check_iccid")
             ]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -354,7 +373,8 @@ class eSIMBot:
             qr_image, lpa_string = esim_tools.create_qr_from_sm_dp(sm_dp_address, activation_code)
             
             # Log activity
-            logger.info(f"Created link & QR for user {update.effective_user.id}: {sm_dp_address}")
+            user = update.effective_user
+            logger.info(f"[CREATE QR] User: {user.username or user.id} | SM-DP+: {sm_dp_address} | Code: {activation_code or 'N/A'}")
             
             # Create response
             response = f"✅ **LINK & QR CODE ĐÃ TẠO THÀNH CÔNG**\n\n"
@@ -1119,7 +1139,8 @@ class eSIMBot:
             esim_id = esim_storage.add_esim_from_lpa(lpa_string, description)
             
             # Log activity
-            logger.info(f"User {update.effective_user.id} added eSIM {esim_id} from LPA string to storage")
+            user = update.effective_user
+            logger.info(f"[ADD eSIM] User: {user.username or user.id} | ID: {esim_id} | Type: LPA String | Desc: {description or 'N/A'}")
             
             # Extract thông tin để hiển thị
             analysis = esim_tools.extract_sm_dp_and_activation(lpa_string)
@@ -1232,7 +1253,8 @@ class eSIMBot:
             esim_id = esim_storage.add_esim(sm_dp_address, activation_code, description)
             
             # Log activity
-            logger.info(f"User {update.effective_user.id} added eSIM {esim_id} to storage")
+            user = update.effective_user
+            logger.info(f"[ADD eSIM] User: {user.username or user.id} | ID: {esim_id} | SM-DP+: {sm_dp_address} | Desc: {description or 'N/A'}")
             
             # Tạo response
             response = f"✅ **ĐÃ THÊM eSIM VÀO KHO THÀNH CÔNG**\n\n"
@@ -1425,7 +1447,8 @@ class eSIMBot:
             esim_id = esim_storage.add_esim_from_lpa(lpa_string, description)
             
             # Log activity
-            logger.info(f"User {update.effective_user.id} added eSIM {esim_id} from URL to storage")
+            user = update.effective_user
+            logger.info(f"[ADD eSIM] User: {user.username or user.id} | ID: {esim_id} | Type: URL | Desc: {description or 'N/A'}")
             
             # Extract thông tin để hiển thị
             sm_dp_address = context.user_data['sm_dp_from_url']
@@ -1637,7 +1660,8 @@ class eSIMBot:
                 return ConversationHandler.END
             
             # Log activity
-            logger.info(f"User {update.effective_user.id} used eSIM {esim_id} from storage")
+            user = update.effective_user
+            logger.info(f"[USE eSIM] User: {user.username or user.id} | ID: {esim_id} | SM-DP+: {esim.sm_dp_address}")
             
             # Tạo response message
             response = f"✅ **ĐÃ SỬ DỤNG eSIM TỪ KHO**\n\n"
@@ -1879,6 +1903,74 @@ Gửi /cancel để hủy thao tác hiện tại
     async def debug_message_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Debug handler để log tất cả messages"""
     
+    # ==================== CHECK ICCID HANDLERS ====================
+    
+    async def start_check_iccid(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Bắt đầu flow check ICCID"""
+        query = update.callback_query
+        
+        keyboard = [
+            [InlineKeyboardButton("🔙 Về Menu Chính", callback_data="back_to_menu")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(
+            "🔍 **CHECK THÔNG TIN eSIM**\n\n"
+            "Vui lòng gửi **mã ICCID** của eSIM cần kiểm tra.\n\n"
+            "📋 ICCID thường có 19-20 chữ số, bắt đầu bằng 89...\n\n"
+            "Gửi /cancel để hủy",
+            reply_markup=reply_markup,
+            parse_mode=ParseMode.MARKDOWN
+        )
+        
+        return WAITING_ICCID
+    
+    async def handle_iccid_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Xử lý ICCID được gửi từ user"""
+        user = update.effective_user
+        iccid = update.message.text.strip()
+        
+        logger.info(f"[CHECK ICCID] User: {user.username or user.id} | ICCID: {iccid}")
+        
+        # Gửi thông báo đang xử lý
+        processing_msg = await update.message.reply_text(
+            "⏳ Đang kiểm tra thông tin eSIM...",
+            parse_mode=ParseMode.MARKDOWN
+        )
+        
+        # Gọi API
+        result = simplifytrip_api.check_iccid(iccid)
+        
+        keyboard = [
+            [InlineKeyboardButton("🔍 Check ICCID khác", callback_data="check_iccid")],
+            [InlineKeyboardButton("🔙 Về Menu Chính", callback_data="back_to_menu")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        if result['success']:
+            # Format và gửi thông tin
+            formatted_info = simplifytrip_api.format_esim_info(result['data'])
+            plan_status = result['data'].get('planStatus', 'N/A')
+            logger.info(f"[CHECK ICCID] Success | ICCID: {iccid} | Status: {plan_status}")
+            
+            await processing_msg.edit_text(
+                formatted_info,
+                reply_markup=reply_markup,
+                parse_mode=ParseMode.MARKDOWN
+            )
+        else:
+            logger.warning(f"[CHECK ICCID] Failed | ICCID: {iccid} | Error: {result['error']}")
+            # Gửi thông báo lỗi
+            await processing_msg.edit_text(
+                f"❌ **Không thể kiểm tra ICCID**\n\n"
+                f"**Lý do:** {result['error']}\n\n"
+                f"**ICCID đã nhập:** `{iccid}`",
+                reply_markup=reply_markup,
+                parse_mode=ParseMode.MARKDOWN
+            )
+        
+        return ConversationHandler.END
+    
     def setup_handlers(self):
         """Thiết lập các handlers cho bot"""
         # Access control filters
@@ -1887,21 +1979,20 @@ Gửi /cancel để hủy thao tác hiện tại
 
         # Log admin IDs để debug
 
-        # Global unauthorized handlers (registered first)
-        self.application.add_handler(MessageHandler(non_admin_filter, self.unauthorized_message), group=0)
-
-        # Command handlers (admin only)
-        self.application.add_handler(CommandHandler("start", self.start, filters=admin_filter))
+        # Command handlers
+        # /start - mọi người đều dùng được
+        self.application.add_handler(CommandHandler("start", self.start))
+        # /help - chỉ admin
         self.application.add_handler(CommandHandler("help", self.help_command, filters=admin_filter))
         
         # Debug command để kiểm tra user ID (không cần filter admin)
         self.application.add_handler(CommandHandler("myid", self.get_user_id))
         
-        # Conversation handler cho tạo link & QR (unified)
+        # Conversation handler cho tạo link & QR (unified) - mọi người đều dùng được
         create_link_qr_handler = ConversationHandler(
             entry_points=[CallbackQueryHandler(self.start_create_link_qr, pattern="^create_link_qr$")],
             states={
-                WAITING_SM_DP_LINK: [MessageHandler(filters.TEXT & ~filters.COMMAND & admin_filter, self.handle_create_link_qr_auto)]
+                WAITING_SM_DP_LINK: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_create_link_qr_auto)]
             },
             fallbacks=[CommandHandler("cancel", self.cancel)],
             per_message=False,
@@ -1941,10 +2032,23 @@ Gửi /cancel để hủy thao tác hiện tại
             per_user=True
         )
         
+        # Conversation handler cho check ICCID - mọi người đều dùng được
+        check_iccid_handler = ConversationHandler(
+            entry_points=[CallbackQueryHandler(self.start_check_iccid, pattern="^check_iccid$")],
+            states={
+                WAITING_ICCID: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_iccid_input)]
+            },
+            fallbacks=[CommandHandler("cancel", self.cancel)],
+            per_message=False,
+            per_chat=True,
+            per_user=True
+        )
+        
         # Thêm các conversation handlers
         self.application.add_handler(create_link_qr_handler, group=1)
         self.application.add_handler(add_esim_handler, group=1)
         self.application.add_handler(use_esim_handler, group=1)
+        self.application.add_handler(check_iccid_handler, group=1)
         
         # Button callback handler
         self.application.add_handler(CallbackQueryHandler(self.button_handler), group=1)
