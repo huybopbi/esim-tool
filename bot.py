@@ -70,9 +70,16 @@ class eSIMBot:
         return ConversationHandler.END
 
     async def unauthorized_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Chặn mọi callback từ người không có quyền"""
+        """Chặn callback từ người không có quyền - chỉ cho các chức năng admin"""
         user_id = update.effective_user.id
+        query = update.callback_query
         
+        # Các callback mọi người đều dùng được - không chặn
+        public_callbacks = ["check_iccid", "create_link_qr", "back_to_menu"]
+        if query and query.data in public_callbacks:
+            return  # Không chặn, để handler khác xử lý
+        
+        # Chặn non-admin cho các chức năng khác
         if user_id not in ADMIN_IDS:
             await self._unauthorized_reply(update)
             return ConversationHandler.END
