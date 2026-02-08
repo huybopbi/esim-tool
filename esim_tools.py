@@ -17,7 +17,18 @@ except (ImportError, FileNotFoundError) as e:
     PYZBAR_AVAILABLE = False
     pyzbar = None
 
-from config import IPHONE_ESIM_MODELS, ANDROID_ESIM_BRANDS
+# Danh sách thiết bị hỗ trợ eSIM
+IPHONE_ESIM_MODELS = [
+    "iPhone XS", "iPhone XS Max", "iPhone XR",
+    "iPhone 11", "iPhone 12", "iPhone 13", "iPhone 14", "iPhone 15",
+    "iPhone SE"
+]
+
+ANDROID_ESIM_BRANDS = {
+    "Samsung": ["Galaxy S20", "Galaxy S21", "Galaxy S22", "Galaxy S23", "Galaxy Z"],
+    "Google": ["Pixel 3", "Pixel 4", "Pixel 5", "Pixel 6", "Pixel 7", "Pixel 8"],
+    "OnePlus": ["8", "9", "10", "11"]
+}
 
 class eSIMTools:
     def __init__(self):
