@@ -109,14 +109,17 @@ class eSIMBot:
         query = update.callback_query
         await query.answer()
         
-        # Check ICCID - mọi người đều dùng được
+        # Các chức năng mọi người đều dùng được
         if query.data == "check_iccid":
             await self.start_check_iccid(update, context)
             return
         
-        # Tạo Link & QR - mọi người đều dùng được
         if query.data == "create_link_qr":
             await self.start_create_link_qr(update, context)
+            return
+        
+        if query.data == "back_to_menu":
+            await self.show_main_menu(update, context)
             return
         
         # Các chức năng khác (Kho eSIM) - chỉ admin mới dùng được
@@ -158,8 +161,6 @@ class eSIMBot:
                     parse_mode=ParseMode.MARKDOWN,
                     reply_markup=self.get_back_keyboard()
                 )
-        elif query.data == "back_to_menu":
-            await self.show_main_menu(update, context)
         elif query.data == "add_esim":
             await self.start_add_esim(update, context)
         elif query.data == "view_available":
