@@ -57,7 +57,26 @@ class SimplifyTripAPI:
                 'http': SIMPLIFYTRIP_PROXY,
                 'https': SIMPLIFYTRIP_PROXY
             }
-            logger.info(f"Using proxy: {SIMPLIFYTRIP_PROXY.split('@')[-1] if '@' in SIMPLIFYTRIP_PROXY else SIMPLIFYTRIP_PROXY}")
+            # Nếu proxy có auth, setup HTTPProxyAuth
+            if '@' in SIMPLIFYTRIP_PROXY:
+                # Parse: http://user:pass@host:port
+                try:
+                    from urllib.parse import urlparse
+                    parsed = urlparse(SIMPLIFYTRIP_PROXY)
+                    if parsed.username and parsed.password:
+                        from requests.auth import HTTPProxyAuth
+                        self.session.auth = HTTPProxyAuth(parsed.username, parsed.password)
+                        # Rebuild proxy URL without credentials
+                        proxy_no_auth = f"{parsed.scheme}://{parsed.hostname}:{parsed.port}"
+                        self.session.proxies = {
+                            'http': proxy_no_auth,
+                            'https': proxy_no_auth
+                        }
+                        logger.info(f"Using proxy with auth: {parsed.hostname}:{parsed.port}")
+                except Exception as e:
+                    logger.warning(f"Could not parse proxy auth: {e}")
+            else:
+                logger.info(f"Using proxy: {SIMPLIFYTRIP_PROXY}")
         
         # Token info
         self.access_token = None
