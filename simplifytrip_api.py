@@ -20,6 +20,12 @@ from config import (
     SIMPLIFYTRIP_PASSWORD
 )
 
+# Import proxy config (optional)
+try:
+    from config import SIMPLIFYTRIP_PROXY
+except ImportError:
+    SIMPLIFYTRIP_PROXY = ""
+
 logger = logging.getLogger(__name__)
 
 # File lưu cookies
@@ -33,7 +39,7 @@ class SimplifyTripAPI:
     
     def __init__(self):
         self.api_url = SIMPLIFYTRIP_API_URL
-        self.timeout = 15
+        self.timeout = 30  # Tăng timeout cho proxy
         
         # Session để giữ cookies
         self.session = requests.Session()
@@ -44,6 +50,14 @@ class SimplifyTripAPI:
             'Origin': 'https://simplifytrip.com',
             'Referer': 'https://simplifytrip.com/',
         })
+        
+        # Setup proxy nếu có
+        if SIMPLIFYTRIP_PROXY:
+            self.session.proxies = {
+                'http': SIMPLIFYTRIP_PROXY,
+                'https': SIMPLIFYTRIP_PROXY
+            }
+            logger.info(f"Using proxy: {SIMPLIFYTRIP_PROXY.split('@')[-1] if '@' in SIMPLIFYTRIP_PROXY else SIMPLIFYTRIP_PROXY}")
         
         # Token info
         self.access_token = None

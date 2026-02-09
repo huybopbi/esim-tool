@@ -18,6 +18,10 @@ SIMPLIFYTRIP_API_URL = "https://api.simplifytrip.com/api/v1/products/iccid"
 SIMPLIFYTRIP_EMAIL = "your_email@example.com"
 SIMPLIFYTRIP_PASSWORD = "your_password"
 
+# Proxy cho VPS (để trống nếu không dùng)
+# Format: "http://user:pass@host:port" hoặc "http://host:port"
+SIMPLIFYTRIP_PROXY = ""  # Ví dụ: "http://proxy.example.com:8080"
+
 # =============================================================================
 # MESSAGES
 # =============================================================================
