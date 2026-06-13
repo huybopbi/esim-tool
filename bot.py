@@ -2043,7 +2043,7 @@ class eSIMBot:
         if esim.description:
             prompt += f"🏷️ **Mô tả:** {esim.description}\n"
         prompt += (
-            "\n📝 **Nhập ghi chú: eSIM này cài cho ai?**\n\n"
+            "\n📝 **Nhập ghi chú cho eSIM này** (tùy chọn):\n\n"
             "**Ví dụ:**\n"
             "• `Nguyễn Văn A - 0901234567`\n"
             "• `Khách lẻ - đơn #1234`\n\n"
@@ -2141,7 +2141,7 @@ class eSIMBot:
             if esim.description:
                 response += f"🏷️ **Mô tả:** {esim.description}\n"
             if used_note:
-                response += f"🎯 **Cài cho:** {used_note}\n"
+                response += f"📝 **Ghi chú:** {used_note}\n"
             
             response += f"\n📋 **LPA String:** `{esim.lpa_string}`\n"
             response += f"🔗 **Link cài đặt iPhone:**\n`{install_link}`"
@@ -2208,7 +2208,7 @@ class eSIMBot:
             used_dt = esim.used_date.replace('T', ' ')[:16] if esim.used_date else 'N/A'
             response += f"📅 Dùng: {used_dt}\n"
             if esim.used_note:
-                response += f"🎯 Cài cho: {esim.used_note}\n"
+                response += f"📝 Ghi chú: {esim.used_note}\n"
             if esim.used_by:
                 response += f"👤 Bởi: {esim.used_by}\n"
             response += "\n"

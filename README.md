@@ -25,9 +25,9 @@ Kết quả trả về:
 - Thêm eSIM vào kho từ LPA/URL/SM-DP+
 - **Thêm hàng loạt:** dán nhiều eSIM cùng lúc với một SM-DP+ dùng chung
 - Lưu nhanh kết quả vừa tạo vào kho
-- Sử dụng eSIM từ kho: nhập **ghi chú "cài cho ai"** (tùy chọn) rồi tự động
-  đánh dấu đã dùng, lưu lại ngày giờ và ghi chú
-- Xem danh sách eSIM còn trống/đã dùng (kèm ICCID, ngày giờ và ghi chú "cài cho ai")
+- Sử dụng eSIM từ kho: nhập **ghi chú** (tùy chọn) rồi tự động đánh dấu đã
+  dùng, lưu lại ngày giờ và ghi chú
+- Xem danh sách eSIM còn trống/đã dùng (kèm ICCID, ngày giờ và ghi chú)
 
 #### 📦 Thêm eSIM hàng loạt
 Trong menu Kho eSIM, bấm **"📦 Thêm hàng loạt"**:
