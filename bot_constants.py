@@ -17,4 +17,13 @@
     WAITING_ICCID,
 ) = range(16)
 
-PUBLIC_CALLBACKS = {"check_iccid", "create_link_qr", "back_to_menu"}
+PUBLIC_CALLBACKS = {
+    "android_guide",
+    "back_to_menu",
+    "check_device",
+    "check_iccid",
+    "create_link_qr",
+    "guide_menu",
+    "iphone_guide",
+    "support",
+}

@@ -1,7 +1,8 @@
 import unittest
 from types import SimpleNamespace
 
-from bot_keyboards import build_main_menu_keyboard
+from bot_constants import PUBLIC_CALLBACKS
+from bot_keyboards import build_guide_menu_keyboard, build_main_menu_keyboard
 from bot_user_info import format_user_id_response
 
 
@@ -19,12 +20,31 @@ class BotSecurityTest(unittest.TestCase):
 
         self.assertIn("create_link_qr", data)
         self.assertIn("check_iccid", data)
+        self.assertIn("guide_menu", data)
         self.assertNotIn("storage_menu", data)
 
     def test_main_menu_shows_storage_for_admin(self):
         data = callback_data(build_main_menu_keyboard(is_admin=True))
 
         self.assertIn("storage_menu", data)
+
+    def test_guide_menu_exposes_public_help_actions(self):
+        data = callback_data(build_guide_menu_keyboard())
+
+        self.assertIn("iphone_guide", data)
+        self.assertIn("android_guide", data)
+        self.assertIn("check_device", data)
+        self.assertIn("support", data)
+        self.assertIn("back_to_menu", data)
+
+    def test_guide_callbacks_are_public(self):
+        self.assertTrue({
+            "guide_menu",
+            "iphone_guide",
+            "android_guide",
+            "check_device",
+            "support",
+        }.issubset(PUBLIC_CALLBACKS))
 
     def test_myid_response_does_not_leak_admin_ids_to_non_admin(self):
         user = SimpleNamespace(

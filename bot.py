@@ -32,6 +32,7 @@ from bot_constants import (
 from bot_handlers import setup_bot_handlers
 from bot_keyboards import (
     build_back_keyboard,
+    build_guide_menu_keyboard,
     build_main_menu_keyboard,
     build_storage_keyboard,
     build_storage_menu_keyboard,
@@ -138,6 +139,26 @@ class eSIMBot:
         if query.data == "back_to_menu":
             await self.show_main_menu(update, context)
             return
+
+        if query.data == "guide_menu":
+            await self.show_guide_menu(update, context)
+            return
+
+        if query.data == "iphone_guide":
+            await self.show_iphone_guide(update, context)
+            return
+
+        if query.data == "android_guide":
+            await self.show_android_guide(update, context)
+            return
+
+        if query.data == "check_device":
+            await self.start_check_device(update, context)
+            return
+
+        if query.data == "support":
+            await self.start_support(update, context)
+            return
         
         # Các chức năng khác (Kho eSIM) - chỉ admin mới dùng được
         if not is_admin:
@@ -146,38 +167,6 @@ class eSIMBot:
         
         if query.data == "storage_menu":
             await self.show_storage_menu(update, context)
-        elif query.data == "check_device":
-            await self.start_check_device(update, context)
-        elif query.data == "support":
-            await self.start_support(update, context)
-        elif query.data == "iphone_guide":
-            try:
-                await query.edit_message_text(
-                    MESSAGES['iphone_guide'],
-                    parse_mode=ParseMode.MARKDOWN,
-                    reply_markup=self.get_back_keyboard()
-                )
-            except Exception as e:
-                logger.warning(f"Could not edit message: {e}")
-                await query.message.reply_text(
-                    MESSAGES['iphone_guide'],
-                    parse_mode=ParseMode.MARKDOWN,
-                    reply_markup=self.get_back_keyboard()
-                )
-        elif query.data == "android_guide":
-            try:
-                await query.edit_message_text(
-                    MESSAGES['android_guide'],
-                    parse_mode=ParseMode.MARKDOWN,
-                    reply_markup=self.get_back_keyboard()
-                )
-            except Exception as e:
-                logger.warning(f"Could not edit message: {e}")
-                await query.message.reply_text(
-                    MESSAGES['android_guide'],
-                    parse_mode=ParseMode.MARKDOWN,
-                    reply_markup=self.get_back_keyboard()
-                )
         elif query.data == "add_esim":
             await self.start_add_esim(update, context)
         elif query.data == "view_available":
@@ -213,6 +202,67 @@ class eSIMBot:
                 MESSAGES['welcome'],
                 reply_markup=reply_markup,
                 parse_mode=ParseMode.MARKDOWN
+            )
+
+    async def show_guide_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Hiển thị trung tâm hướng dẫn cho người dùng."""
+        query = update.callback_query
+        guide_text = (
+            "❓ **TRUNG TÂM HƯỚNG DẪN eSIM**\n\n"
+            "Chọn nội dung bạn cần hỗ trợ:\n\n"
+            "📱 **iPhone:** Cách cài eSIM bằng link hoặc QR\n"
+            "🤖 **Android:** Cách thêm eSIM trên thiết bị Android\n"
+            "✅ **Thiết bị hỗ trợ:** Kiểm tra nhanh dòng máy phổ biến\n"
+            "🆘 **Lỗi thường gặp:** Gợi ý xử lý khi kích hoạt lỗi"
+        )
+        reply_markup = build_guide_menu_keyboard()
+
+        try:
+            await query.edit_message_text(
+                guide_text,
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=reply_markup
+            )
+        except Exception as e:
+            logger.warning(f"Could not edit message, sending new one: {e}")
+            await query.message.reply_text(
+                guide_text,
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=reply_markup
+            )
+
+    async def show_iphone_guide(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Hiển thị hướng dẫn cài eSIM cho iPhone."""
+        query = update.callback_query
+        try:
+            await query.edit_message_text(
+                MESSAGES['iphone_guide'],
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=build_guide_menu_keyboard()
+            )
+        except Exception as e:
+            logger.warning(f"Could not edit message: {e}")
+            await query.message.reply_text(
+                MESSAGES['iphone_guide'],
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=build_guide_menu_keyboard()
+            )
+
+    async def show_android_guide(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Hiển thị hướng dẫn cài eSIM cho Android."""
+        query = update.callback_query
+        try:
+            await query.edit_message_text(
+                MESSAGES['android_guide'],
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=build_guide_menu_keyboard()
+            )
+        except Exception as e:
+            logger.warning(f"Could not edit message: {e}")
+            await query.message.reply_text(
+                MESSAGES['android_guide'],
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=build_guide_menu_keyboard()
             )
     
     # Tool 1: Tạo link cài eSIM cho iPhone
