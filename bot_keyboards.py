@@ -113,13 +113,31 @@ def build_storage_menu_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton("➕ Thêm eSIM", callback_data="add_esim"),
+            InlineKeyboardButton("📦 Thêm hàng loạt", callback_data="bulk_add_esim"),
+        ],
+        [
             InlineKeyboardButton("📋 Xem Kho", callback_data="view_available"),
+            InlineKeyboardButton("📊 eSIM Đã dùng", callback_data="view_used"),
         ],
         [
             InlineKeyboardButton("🎯 Sử dụng eSIM", callback_data="use_esim"),
-            InlineKeyboardButton("📊 eSIM Đã dùng", callback_data="view_used"),
         ],
         [
             InlineKeyboardButton("🔙 Về Menu Chính", callback_data="back_to_menu"),
         ],
+    ])
+
+
+def build_bulk_smdp_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🌐 rsp.esim.exchange", callback_data="bulk_smdp_1")],
+        [InlineKeyboardButton("🌐 rsp.billionconnect.com", callback_data="bulk_smdp_2")],
+        [InlineKeyboardButton("✍️ Nhập SM-DP+ khác", callback_data="bulk_smdp_custom")],
+        [InlineKeyboardButton("❌ Hủy", callback_data="cancel_add_esim")],
+    ])
+
+
+def build_cancel_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("❌ Hủy", callback_data="cancel_add_esim")],
     ])

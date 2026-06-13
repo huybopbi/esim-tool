@@ -199,6 +199,126 @@ class eSIMTools:
                 'original_data': qr_data
             }
     
+    def _parse_block_fields(self, block: str) -> Dict[str, str]:
+        """Tách các trường có nhãn trong một block (Activation Code / ICCID / SM-DP+ / LPA)."""
+        fields: Dict[str, str] = {}
+
+        activation_labels = {
+            'activation code', 'activation', 'code', 'matching id',
+            'mã kích hoạt', 'ma kich hoat', 'mã', 'ma',
+        }
+        iccid_labels = {'iccid', 'icc id', 'sim'}
+        sm_dp_labels = {
+            'sm-dp+', 'sm-dp+ address', 'smdp', 'smdp+', 'sm-dp',
+            'smdp address', 'sm-dp address', 'sm dp+', 'address', 'server',
+        }
+
+        for raw_line in block.splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+
+            # Dòng LPA thô (ghi đè mọi thứ cho block này)
+            if line.upper().startswith('LPA:'):
+                fields['lpa_string'] = line
+                continue
+
+            # Định dạng "Nhãn: Giá trị" (hỗ trợ cả dấu hai chấm full-width)
+            match = re.match(r'^([^:：]+)[:：]\s*(.*)$', line)
+            if not match:
+                continue
+
+            label = match.group(1).strip().lower()
+            value = match.group(2).strip()
+            if not value:
+                continue
+
+            if label in activation_labels:
+                fields['activation_code'] = value
+            elif label in iccid_labels:
+                fields['iccid'] = value
+            elif label in sm_dp_labels:
+                fields['sm_dp_address'] = value
+
+        return fields
+
+    def parse_bulk_esim_input(
+        self,
+        text: str,
+        default_sm_dp_address: str = "",
+    ) -> Tuple[list, list]:
+        """Phân tích danh sách eSIM dán hàng loạt.
+
+        Mỗi eSIM là một block, các block cách nhau bằng dòng trống. Mỗi block có
+        thể chứa các trường ``Activation Code``, ``ICCID``, ``SM-DP+`` hoặc một
+        dòng ``LPA:`` thô. SM-DP+ riêng của block (hoặc LPA thô) sẽ ghi đè
+        ``default_sm_dp_address``.
+
+        Trả về ``(entries, errors)`` trong đó mỗi entry là dict gồm
+        ``sm_dp_address``, ``activation_code``, ``iccid``, ``lpa_string`` và mỗi
+        error là dict gồm ``block`` và ``reason``.
+        """
+        entries: list = []
+        errors: list = []
+
+        if not text or not text.strip():
+            return entries, errors
+
+        default_sm_dp_address = (default_sm_dp_address or "").strip()
+
+        # Tách block theo dòng trống (cho phép khoảng trắng trên dòng trống)
+        raw_blocks = re.split(r'\n\s*\n', text.strip())
+
+        for raw in raw_blocks:
+            block = raw.strip()
+            if not block:
+                continue
+
+            fields = self._parse_block_fields(block)
+            lpa = fields.get('lpa_string', '')
+            iccid = fields.get('iccid', '')
+
+            # Ưu tiên dòng LPA thô nếu có
+            if lpa:
+                is_valid, message = self.validate_lpa_string(lpa)
+                if not is_valid:
+                    errors.append({'block': block, 'reason': message})
+                    continue
+                analysis = self.extract_sm_dp_and_activation(lpa)
+                entries.append({
+                    'sm_dp_address': analysis['sm_dp_address'],
+                    'activation_code': analysis['activation_code'],
+                    'iccid': iccid,
+                    'lpa_string': lpa.strip(),
+                })
+                continue
+
+            sm_dp = fields.get('sm_dp_address') or default_sm_dp_address
+            activation_code = fields.get('activation_code', '')
+
+            if not sm_dp:
+                errors.append({'block': block, 'reason': 'Thiếu SM-DP+ address'})
+                continue
+
+            is_valid, message = self.validate_sm_dp_address(sm_dp)
+            if not is_valid:
+                errors.append({'block': block, 'reason': message})
+                continue
+
+            if not activation_code:
+                errors.append({'block': block, 'reason': 'Thiếu Activation Code'})
+                continue
+
+            lpa_string = f"LPA:1${sm_dp}${activation_code}"
+            entries.append({
+                'sm_dp_address': sm_dp,
+                'activation_code': activation_code,
+                'iccid': iccid,
+                'lpa_string': lpa_string,
+            })
+
+        return entries, errors
+
     def validate_sm_dp_address(self, sm_dp_address: str) -> Tuple[bool, str]:
         """Kiểm tra tính hợp lệ của SM-DP+ address"""
         if not sm_dp_address or not sm_dp_address.strip():

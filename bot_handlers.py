@@ -14,6 +14,9 @@ from bot_constants import (
     WAITING_ADD_ESIM_SM_DP,
     WAITING_ADD_ESIM_URL,
     WAITING_ADD_ESIM_URL_DESC,
+    WAITING_BULK_LIST,
+    WAITING_BULK_SM_DP_CUSTOM,
+    WAITING_BULK_SMDP_CHOICE,
     WAITING_ESIM_SELECTION,
     WAITING_SM_DP_LINK,
 )
@@ -152,9 +155,52 @@ def setup_bot_handlers(bot):
         per_user=True,
     )
 
+    bulk_add_esim_handler = ConversationHandler(
+        entry_points=[
+            CallbackQueryHandler(bot.start_bulk_add_esim, pattern="^bulk_add_esim$")
+        ],
+        states={
+            WAITING_BULK_SMDP_CHOICE: [
+                CallbackQueryHandler(
+                    bot.handle_bulk_smdp_choice,
+                    pattern="^bulk_smdp_(1|2|custom)$",
+                ),
+                CallbackQueryHandler(
+                    bot.cancel_add_esim_callback,
+                    pattern="^cancel_add_esim$",
+                ),
+            ],
+            WAITING_BULK_SM_DP_CUSTOM: [
+                CallbackQueryHandler(
+                    bot.cancel_add_esim_callback,
+                    pattern="^cancel_add_esim$",
+                ),
+                MessageHandler(
+                    filters.TEXT & ~filters.COMMAND & admin_filter,
+                    bot.handle_bulk_smdp_custom,
+                ),
+            ],
+            WAITING_BULK_LIST: [
+                CallbackQueryHandler(
+                    bot.cancel_add_esim_callback,
+                    pattern="^cancel_add_esim$",
+                ),
+                MessageHandler(
+                    filters.TEXT & ~filters.COMMAND & admin_filter,
+                    bot.handle_bulk_list,
+                ),
+            ],
+        },
+        fallbacks=[CommandHandler("cancel", bot.cancel)],
+        per_message=False,
+        per_chat=True,
+        per_user=True,
+    )
+
     bot.application.add_handler(create_link_qr_handler, group=1)
     bot.application.add_handler(add_esim_handler, group=1)
     bot.application.add_handler(use_esim_handler, group=1)
+    bot.application.add_handler(bulk_add_esim_handler, group=1)
 
     bot.application.add_handler(CallbackQueryHandler(bot.button_handler), group=1)
     bot.application.add_handler(CallbackQueryHandler(bot.unauthorized_callback), group=2)

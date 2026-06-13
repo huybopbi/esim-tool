@@ -14,7 +14,16 @@
     WAITING_ADD_ESIM_LPA_DESC,
     WAITING_ADD_ESIM_URL,
     WAITING_ADD_ESIM_URL_DESC,
-) = range(15)
+    WAITING_BULK_SMDP_CHOICE,
+    WAITING_BULK_SM_DP_CUSTOM,
+    WAITING_BULK_LIST,
+) = range(18)
+
+# SM-DP+ dựng sẵn cho thêm hàng loạt
+BULK_SM_DP_PRESETS = {
+    "bulk_smdp_1": "rsp.esim.exchange",
+    "bulk_smdp_2": "rsp.billionconnect.com",
+}
 
 PUBLIC_CALLBACKS = {
     "android_guide",

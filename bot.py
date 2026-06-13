@@ -11,6 +11,7 @@ from telegram.ext import Application, ConversationHandler, ContextTypes
 from telegram.constants import ParseMode
 
 from bot_constants import (
+    BULK_SM_DP_PRESETS,
     PUBLIC_CALLBACKS,
     WAITING_ACTIVATION_CODE_LINK,
     WAITING_ACTIVATION_CODE_QR,
@@ -21,6 +22,9 @@ from bot_constants import (
     WAITING_ADD_ESIM_SM_DP,
     WAITING_ADD_ESIM_URL,
     WAITING_ADD_ESIM_URL_DESC,
+    WAITING_BULK_LIST,
+    WAITING_BULK_SM_DP_CUSTOM,
+    WAITING_BULK_SMDP_CHOICE,
     WAITING_ESIM_SELECTION,
     WAITING_LPA_STRING,
     WAITING_QR_DATA,
@@ -31,6 +35,8 @@ from bot_constants import (
 from bot_handlers import setup_bot_handlers
 from bot_keyboards import (
     build_back_keyboard,
+    build_bulk_smdp_keyboard,
+    build_cancel_keyboard,
     build_guide_menu_keyboard,
     build_main_menu_keyboard,
     build_optional_activation_code_keyboard,
@@ -1632,6 +1638,188 @@ class eSIMBot:
             description = update.message.text.strip()
         return await self._finish_add_esim_from_url(update, context, description)
 
+    # Thêm eSIM hàng loạt
+    async def start_bulk_add_esim(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Bắt đầu thêm eSIM hàng loạt - chọn SM-DP+ chung cho cả lô."""
+        query = update.callback_query
+        await query.answer()
+
+        if not self._check_admin_access(update):
+            await self._unauthorized_reply(update)
+            return ConversationHandler.END
+
+        intro_text = (
+            "📦 **THÊM eSIM HÀNG LOẠT**\n\n"
+            "Bước 1: Chọn **SM-DP+ Address** dùng chung cho cả lô eSIM:\n\n"
+            "💡 SM-DP+ sẽ được áp cho mọi eSIM trong danh sách (trừ block tự "
+            "khai báo riêng).\n\n"
+            "Gửi /cancel để hủy"
+        )
+
+        try:
+            await query.edit_message_text(
+                intro_text,
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=build_bulk_smdp_keyboard()
+            )
+        except Exception as e:
+            logger.warning(f"Could not edit message, sending new one: {e}")
+            await query.message.reply_text(
+                intro_text,
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=build_bulk_smdp_keyboard()
+            )
+
+        context.user_data['action'] = 'bulk_add_esim'
+        return WAITING_BULK_SMDP_CHOICE
+
+    async def handle_bulk_smdp_choice(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Xử lý lựa chọn SM-DP+ cho thêm hàng loạt."""
+        query = update.callback_query
+        await query.answer()
+
+        if query.data == "bulk_smdp_custom":
+            try:
+                await query.edit_message_text(
+                    "✍️ **NHẬP SM-DP+ ADDRESS**\n\n"
+                    "Vui lòng nhập SM-DP+ Address dùng chung cho cả lô:\n"
+                    "**Ví dụ:** `rsp.truphone.com`\n\n"
+                    "Gửi /cancel để hủy",
+                    parse_mode=ParseMode.MARKDOWN,
+                    reply_markup=build_cancel_keyboard()
+                )
+            except Exception as e:
+                logger.warning(f"Could not edit message, sending new one: {e}")
+                await query.message.reply_text(
+                    "✍️ **NHẬP SM-DP+ ADDRESS**\n\n"
+                    "Vui lòng nhập SM-DP+ Address dùng chung cho cả lô:\n"
+                    "**Ví dụ:** `rsp.truphone.com`\n\n"
+                    "Gửi /cancel để hủy",
+                    parse_mode=ParseMode.MARKDOWN,
+                    reply_markup=build_cancel_keyboard()
+                )
+            return WAITING_BULK_SM_DP_CUSTOM
+
+        sm_dp_address = BULK_SM_DP_PRESETS.get(query.data)
+        if not sm_dp_address:
+            return WAITING_BULK_SMDP_CHOICE
+
+        context.user_data['bulk_sm_dp'] = sm_dp_address
+        return await self._prompt_bulk_list(update, context)
+
+    async def handle_bulk_smdp_custom(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Xử lý SM-DP+ tự nhập cho thêm hàng loạt."""
+        sm_dp_address = update.message.text.strip()
+
+        is_valid, message = esim_tools.validate_sm_dp_address(sm_dp_address)
+        if not is_valid:
+            await update.message.reply_text(
+                f"❌ {message}\n\nVui lòng nhập lại SM-DP+ Address hợp lệ:",
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=build_cancel_keyboard()
+            )
+            return WAITING_BULK_SM_DP_CUSTOM
+
+        context.user_data['bulk_sm_dp'] = sm_dp_address
+        return await self._prompt_bulk_list(update, context)
+
+    async def _prompt_bulk_list(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Yêu cầu người dùng dán danh sách eSIM."""
+        sm_dp_address = context.user_data.get('bulk_sm_dp', '')
+
+        prompt_text = (
+            "📦 **THÊM eSIM HÀNG LOẠT**\n\n"
+            f"✅ **SM-DP+ chung:** `{sm_dp_address}`\n\n"
+            "Bước 2: Dán **danh sách eSIM**. Mỗi eSIM cách nhau bằng **một dòng trống**:\n\n"
+            "```\n"
+            "Activation Code:OZ8NB-X9008-G1LB2-xxxxx\n"
+            "ICCID:89851000000010674211\n"
+            "\n"
+            "Activation Code:QRQNB-W2108-J1JE3-xxxx\n"
+            "ICCID:89851000000010674213\n"
+            "```\n"
+            "💡 Mỗi block có thể thêm dòng `SM-DP+:` riêng để ghi đè, hoặc dán "
+            "thẳng dòng `LPA:1$...$...`.\n\n"
+            "Gửi /cancel để hủy"
+        )
+
+        await self._reply_text(
+            update,
+            prompt_text,
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=build_cancel_keyboard()
+        )
+        return WAITING_BULK_LIST
+
+    async def handle_bulk_list(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Phân tích danh sách dán hàng loạt và lưu vào kho."""
+        text = update.message.text
+        sm_dp_address = context.user_data.get('bulk_sm_dp', '')
+
+        entries, errors = esim_tools.parse_bulk_esim_input(text, sm_dp_address)
+
+        if not entries and not errors:
+            await update.message.reply_text(
+                "❌ **Không tìm thấy eSIM nào trong danh sách**\n\n"
+                "Vui lòng kiểm tra lại định dạng và gửi lại, hoặc /cancel để hủy.",
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=build_cancel_keyboard()
+            )
+            return WAITING_BULK_LIST
+
+        added_ids = []
+        if entries:
+            try:
+                added_ids = esim_storage.add_esims_bulk(entries)
+            except Exception as e:
+                await update.message.reply_text(
+                    f"❌ **Lỗi lưu eSIM vào kho:** {str(e)}\n\nVui lòng thử lại!",
+                    parse_mode=ParseMode.MARKDOWN,
+                    reply_markup=self.get_storage_keyboard()
+                )
+                return ConversationHandler.END
+
+        user = update.effective_user
+        logger.info(
+            f"[BULK ADD] User: {user.username or user.id} | Added: {len(added_ids)} | Errors: {len(errors)}"
+        )
+
+        response = "📦 **KẾT QUẢ THÊM HÀNG LOẠT**\n\n"
+        response += f"✅ **Đã thêm:** {len(added_ids)} eSIM\n"
+        if errors:
+            response += f"⚠️ **Lỗi/bỏ qua:** {len(errors)} block\n"
+        response += "\n"
+
+        if entries:
+            response += "**Danh sách đã thêm:**\n"
+            for idx, (esim_id, entry) in enumerate(zip(added_ids, entries[:10]), 1):
+                response += f"**{idx}. ID `{esim_id}`**\n"
+                response += f"📍 `{entry['sm_dp_address']}`\n"
+                if entry.get('activation_code'):
+                    response += f"🔑 `{entry['activation_code']}`\n"
+                if entry.get('iccid'):
+                    response += f"📲 ICCID: `{entry['iccid']}`\n"
+            if len(entries) > 10:
+                response += f"... và {len(entries) - 10} eSIM khác\n"
+            response += "\n"
+
+        if errors:
+            response += "**Các block bị lỗi:**\n"
+            for idx, err in enumerate(errors[:5], 1):
+                snippet = err['block'].replace('\n', ' / ')
+                if len(snippet) > 50:
+                    snippet = snippet[:50] + "..."
+                response += f"{idx}. {err['reason']} — `{snippet}`\n"
+            if len(errors) > 5:
+                response += f"... và {len(errors) - 5} block lỗi khác\n"
+
+        await update.message.reply_text(
+            response,
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=self.get_storage_result_keyboard()
+        )
+        return ConversationHandler.END
+
     async def skip_add_esim_code(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Bỏ qua activation code bằng inline button."""
         query = update.callback_query
@@ -1721,6 +1909,8 @@ class eSIMBot:
             response += f"📍 `{esim.sm_dp_address}`\n"
             if esim.activation_code:
                 response += f"🔑 `{esim.activation_code}`\n"
+            if esim.iccid:
+                response += f"📲 ICCID: `{esim.iccid}`\n"
             if esim.description:
                 response += f"🏷️ {esim.description}\n"
             response += f"📅 {esim.added_date[:10]}\n\n"
@@ -1869,6 +2059,8 @@ class eSIMBot:
             response += f"📍 **SM-DP+:** `{esim.sm_dp_address}`\n"
             if esim.activation_code:
                 response += f"🔑 **Activation Code:** `{esim.activation_code}`\n"
+            if esim.iccid:
+                response += f"📲 **ICCID:** `{esim.iccid}`\n"
             if esim.description:
                 response += f"🏷️ **Mô tả:** {esim.description}\n"
             
@@ -1946,6 +2138,8 @@ class eSIMBot:
         for i, esim in enumerate(esims[:10], 1):  # Hiển thị tối đa 10 eSIM
             response += f"**{i}. ID: {esim.id}**\n"
             response += f"📍 `{esim.sm_dp_address}`\n"
+            if esim.iccid:
+                response += f"📲 ICCID: `{esim.iccid}`\n"
             if esim.description:
                 response += f"🏷️ {esim.description}\n"
             response += f"📅 Dùng: {esim.used_date[:10] if esim.used_date else 'N/A'}\n"

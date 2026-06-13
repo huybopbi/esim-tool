@@ -2,6 +2,7 @@ import json
 import os
 import sqlite3
 import datetime
+import uuid
 from typing import List, Dict, Optional, Tuple
 from dataclasses import dataclass, asdict
 import logging
@@ -20,6 +21,7 @@ class eSIMEntry:
     used_date: Optional[str] = None
     used_by: Optional[str] = None
     lpa_string: Optional[str] = None
+    iccid: Optional[str] = None
 
     def to_dict(self) -> Dict:
         return asdict(self)
@@ -52,9 +54,17 @@ class eSIMStorage:
                     status TEXT NOT NULL DEFAULT 'available',
                     used_date TEXT,
                     used_by TEXT,
-                    lpa_string TEXT
+                    lpa_string TEXT,
+                    iccid TEXT
                 )
             ''')
+            
+            # Migration: thêm cột iccid cho database cũ chưa có
+            cursor.execute("PRAGMA table_info(esim_entries)")
+            existing_columns = {row[1] for row in cursor.fetchall()}
+            if 'iccid' not in existing_columns:
+                cursor.execute('ALTER TABLE esim_entries ADD COLUMN iccid TEXT')
+                logger.info("Migrated esim_entries: added iccid column")
             
             # Tạo index cho tìm kiếm nhanh
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_status ON esim_entries(status)')
@@ -68,7 +78,7 @@ class eSIMStorage:
             logger.error(f"Error initializing database: {e}")
             raise
     
-    def add_esim(self, sm_dp_address: str, activation_code: str = "", description: str = "") -> str:
+    def add_esim(self, sm_dp_address: str, activation_code: str = "", description: str = "", iccid: str = "") -> str:
         """Thêm eSIM mới vào kho"""
         try:
             # Tạo LPA string
@@ -78,7 +88,6 @@ class eSIMStorage:
                 lpa_string = f"LPA:1${sm_dp_address}$"
             
             # Tạo ID duy nhất
-            import uuid
             esim_id = str(uuid.uuid4())[:8]
             
             # Tạo entry
@@ -89,7 +98,8 @@ class eSIMStorage:
                 description=description,
                 added_date=datetime.datetime.now().isoformat(),
                 status='available',
-                lpa_string=lpa_string
+                lpa_string=lpa_string,
+                iccid=iccid
             )
             
             # Lưu vào database
@@ -98,11 +108,11 @@ class eSIMStorage:
             
             cursor.execute('''
                 INSERT INTO esim_entries 
-                (id, sm_dp_address, activation_code, description, added_date, status, lpa_string)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                (id, sm_dp_address, activation_code, description, added_date, status, lpa_string, iccid)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
                 entry.id, entry.sm_dp_address, entry.activation_code,
-                entry.description, entry.added_date, entry.status, entry.lpa_string
+                entry.description, entry.added_date, entry.status, entry.lpa_string, entry.iccid
             ))
             
             conn.commit()
@@ -115,7 +125,7 @@ class eSIMStorage:
             logger.error(f"Error adding eSIM: {e}")
             raise
     
-    def add_esim_from_lpa(self, lpa_string: str, description: str = "") -> str:
+    def add_esim_from_lpa(self, lpa_string: str, description: str = "", iccid: str = "") -> str:
         """Thêm eSIM từ LPA string vào kho"""
         try:
             # Import esim_tools để validate và extract thông tin
@@ -133,7 +143,6 @@ class eSIMStorage:
                 raise ValueError("Không thể extract SM-DP+ address từ LPA string")
             
             # Tạo ID duy nhất
-            import uuid
             esim_id = str(uuid.uuid4())[:8]
             
             # Tạo entry
@@ -144,7 +153,8 @@ class eSIMStorage:
                 description=description,
                 added_date=datetime.datetime.now().isoformat(),
                 status='available',
-                lpa_string=lpa_string.strip()
+                lpa_string=lpa_string.strip(),
+                iccid=iccid
             )
             
             # Lưu vào database
@@ -153,11 +163,11 @@ class eSIMStorage:
             
             cursor.execute('''
                 INSERT INTO esim_entries 
-                (id, sm_dp_address, activation_code, description, added_date, status, lpa_string)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                (id, sm_dp_address, activation_code, description, added_date, status, lpa_string, iccid)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
                 entry.id, entry.sm_dp_address, entry.activation_code,
-                entry.description, entry.added_date, entry.status, entry.lpa_string
+                entry.description, entry.added_date, entry.status, entry.lpa_string, entry.iccid
             ))
             
             conn.commit()
@@ -168,6 +178,51 @@ class eSIMStorage:
             
         except Exception as e:
             logger.error(f"Error adding eSIM from LPA: {e}")
+            raise
+
+    def add_esims_bulk(self, entries: List[Dict]) -> List[str]:
+        """Thêm nhiều eSIM cùng lúc trong một transaction.
+
+        Mỗi entry là dict gồm ``lpa_string`` (bắt buộc), ``sm_dp_address``,
+        ``activation_code``, ``iccid``, ``description`` (tùy chọn).
+        Trả về danh sách ID đã thêm thành công.
+        """
+        added_ids: List[str] = []
+
+        if not entries:
+            return added_ids
+
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+
+            now = datetime.datetime.now().isoformat()
+            for entry in entries:
+                esim_id = str(uuid.uuid4())[:8]
+                cursor.execute('''
+                    INSERT INTO esim_entries 
+                    (id, sm_dp_address, activation_code, description, added_date, status, lpa_string, iccid)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    esim_id,
+                    entry.get('sm_dp_address', ''),
+                    entry.get('activation_code', ''),
+                    entry.get('description', ''),
+                    now,
+                    'available',
+                    entry['lpa_string'],
+                    entry.get('iccid', ''),
+                ))
+                added_ids.append(esim_id)
+
+            conn.commit()
+            conn.close()
+
+            logger.info(f"Bulk added {len(added_ids)} eSIMs to storage")
+            return added_ids
+
+        except Exception as e:
+            logger.error(f"Error bulk adding eSIMs: {e}")
             raise
     
     def get_available_esims(self) -> List[eSIMEntry]:
@@ -197,7 +252,8 @@ class eSIMStorage:
                     'status': row[5],
                     'used_date': row[6],
                     'used_by': row[7],
-                    'lpa_string': row[8]
+                    'lpa_string': row[8],
+                    'iccid': row[9] if len(row) > 9 else None
                 }
                 entries.append(eSIMEntry.from_dict(entry_dict))
             
@@ -234,7 +290,8 @@ class eSIMStorage:
                     'status': row[5],
                     'used_date': row[6],
                     'used_by': row[7],
-                    'lpa_string': row[8]
+                    'lpa_string': row[8],
+                    'iccid': row[9] if len(row) > 9 else None
                 }
                 entries.append(eSIMEntry.from_dict(entry_dict))
             
@@ -264,7 +321,8 @@ class eSIMStorage:
                     'status': row[5],
                     'used_date': row[6],
                     'used_by': row[7],
-                    'lpa_string': row[8]
+                    'lpa_string': row[8],
+                    'iccid': row[9] if len(row) > 9 else None
                 }
                 return eSIMEntry.from_dict(entry_dict)
             
