@@ -61,12 +61,30 @@ def setup_bot_handlers(bot):
                 )
             ],
             WAITING_ADD_ESIM_CODE: [
+                CallbackQueryHandler(
+                    bot.skip_add_esim_code,
+                    pattern="^skip_activation_code$",
+                ),
+                CallbackQueryHandler(
+                    bot.cancel_add_esim_callback,
+                    pattern="^cancel_add_esim$",
+                ),
+                CommandHandler("skip", bot.handle_add_esim_code),
                 MessageHandler(
                     filters.TEXT & ~filters.COMMAND & admin_filter,
                     bot.handle_add_esim_code,
                 )
             ],
             WAITING_ADD_ESIM_DESC: [
+                CallbackQueryHandler(
+                    bot.skip_add_esim_description,
+                    pattern="^skip_esim_description$",
+                ),
+                CallbackQueryHandler(
+                    bot.cancel_add_esim_callback,
+                    pattern="^cancel_add_esim$",
+                ),
+                CommandHandler("skip", bot.handle_add_esim_desc),
                 MessageHandler(
                     filters.TEXT & ~filters.COMMAND & admin_filter,
                     bot.handle_add_esim_desc,
@@ -79,6 +97,15 @@ def setup_bot_handlers(bot):
                 )
             ],
             WAITING_ADD_ESIM_LPA_DESC: [
+                CallbackQueryHandler(
+                    bot.skip_add_esim_description,
+                    pattern="^skip_esim_description$",
+                ),
+                CallbackQueryHandler(
+                    bot.cancel_add_esim_callback,
+                    pattern="^cancel_add_esim$",
+                ),
+                CommandHandler("skip", bot.handle_add_esim_lpa_desc),
                 MessageHandler(
                     filters.TEXT & ~filters.COMMAND & admin_filter,
                     bot.handle_add_esim_lpa_desc,
@@ -91,6 +118,15 @@ def setup_bot_handlers(bot):
                 )
             ],
             WAITING_ADD_ESIM_URL_DESC: [
+                CallbackQueryHandler(
+                    bot.skip_add_esim_description,
+                    pattern="^skip_esim_description$",
+                ),
+                CallbackQueryHandler(
+                    bot.cancel_add_esim_callback,
+                    pattern="^cancel_add_esim$",
+                ),
+                CommandHandler("skip", bot.handle_add_esim_url_desc),
                 MessageHandler(
                     filters.TEXT & ~filters.COMMAND & admin_filter,
                     bot.handle_add_esim_url_desc,

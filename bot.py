@@ -33,6 +33,8 @@ from bot_keyboards import (
     build_back_keyboard,
     build_guide_menu_keyboard,
     build_main_menu_keyboard,
+    build_optional_activation_code_keyboard,
+    build_optional_description_keyboard,
     build_result_actions_keyboard,
     build_storage_result_keyboard,
     build_storage_keyboard,
@@ -191,6 +193,145 @@ class eSIMBot:
     def get_storage_result_keyboard(self):
         """Tạo keyboard thao tác sau khi thêm/sử dụng eSIM trong kho."""
         return build_storage_result_keyboard()
+
+    async def _reply_text(self, update: Update, text: str, **kwargs):
+        """Reply to either a message update or a callback-triggered update."""
+        if update.message:
+            return await update.message.reply_text(text, **kwargs)
+        if update.callback_query:
+            return await update.callback_query.message.reply_text(text, **kwargs)
+        return None
+
+    async def _finish_add_esim_from_lpa(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        description: str = "",
+    ):
+        lpa_string = context.user_data['lpa_string']
+
+        try:
+            esim_id = esim_storage.add_esim_from_lpa(lpa_string, description)
+
+            user = update.effective_user
+            logger.info(f"[ADD eSIM] User: {user.username or user.id} | ID: {esim_id} | Type: LPA String | Desc: {description or 'N/A'}")
+
+            analysis = esim_tools.extract_sm_dp_and_activation(lpa_string)
+
+            response = f"✅ **ĐÃ THÊM eSIM VÀO KHO THÀNH CÔNG**\n\n"
+            response += f"🆔 **ID:** `{esim_id}`\n"
+            response += f"📋 **LPA String:** `{lpa_string}`\n"
+            response += f"📍 **SM-DP+:** `{analysis['sm_dp_address']}`\n"
+            if analysis['activation_code']:
+                response += f"🔑 **Activation Code:** `{analysis['activation_code']}`\n"
+            if description:
+                response += f"🏷️ **Mô tả:** {description}\n"
+            response += f"\n💡 **Ghi chú:** eSIM đã được lưu vào kho và sẵn sàng sử dụng"
+
+            await self._reply_text(
+                update,
+                response,
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=self.get_storage_result_keyboard()
+            )
+
+        except Exception as e:
+            await self._reply_text(
+                update,
+                f"❌ **Lỗi thêm eSIM vào kho:** {str(e)}\n\n"
+                f"Vui lòng thử lại sau!",
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=self.get_back_keyboard()
+            )
+
+        return ConversationHandler.END
+
+    async def _finish_add_esim_from_smdp(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        description: str = "",
+    ):
+        sm_dp_address = context.user_data['sm_dp_address']
+        activation_code = context.user_data['activation_code']
+
+        try:
+            esim_id = esim_storage.add_esim(sm_dp_address, activation_code, description)
+
+            user = update.effective_user
+            logger.info(f"[ADD eSIM] User: {user.username or user.id} | ID: {esim_id} | SM-DP+: {sm_dp_address} | Desc: {description or 'N/A'}")
+
+            response = f"✅ **ĐÃ THÊM eSIM VÀO KHO THÀNH CÔNG**\n\n"
+            response += f"🆔 **ID:** `{esim_id}`\n"
+            response += f"📍 **SM-DP+:** `{sm_dp_address}`\n"
+            if activation_code:
+                response += f"🔑 **Activation Code:** `{activation_code}`\n"
+            if description:
+                response += f"🏷️ **Mô tả:** {description}\n"
+            response += f"\n💡 **Ghi chú:** eSIM đã được lưu vào kho và sẵn sàng sử dụng"
+
+            await self._reply_text(
+                update,
+                response,
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=self.get_storage_result_keyboard()
+            )
+
+        except Exception as e:
+            await self._reply_text(
+                update,
+                f"❌ **Lỗi thêm eSIM vào kho:** {str(e)}\n\n"
+                f"Vui lòng thử lại sau!",
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=self.get_back_keyboard()
+            )
+
+        return ConversationHandler.END
+
+    async def _finish_add_esim_from_url(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        description: str = "",
+    ):
+        lpa_string = context.user_data['lpa_from_url']
+
+        try:
+            esim_id = esim_storage.add_esim_from_lpa(lpa_string, description)
+
+            user = update.effective_user
+            logger.info(f"[ADD eSIM] User: {user.username or user.id} | ID: {esim_id} | Type: URL | Desc: {description or 'N/A'}")
+
+            sm_dp_address = context.user_data['sm_dp_from_url']
+            activation_code = context.user_data['code_from_url']
+
+            response = f"✅ **ĐÃ THÊM eSIM VÀO KHO THÀNH CÔNG**\n\n"
+            response += f"🆔 **ID:** `{esim_id}`\n"
+            response += f"📍 **SM-DP+:** `{sm_dp_address}`\n"
+            if activation_code:
+                response += f"🔑 **Activation Code:** `{activation_code}`\n"
+            response += f"📋 **LPA String:** `{lpa_string}`\n"
+            if description:
+                response += f"🏷️ **Mô tả:** {description}\n"
+            response += f"\n💡 **Ghi chú:** eSIM đã được lưu vào kho và sẵn sàng sử dụng"
+
+            await self._reply_text(
+                update,
+                response,
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=self.get_storage_result_keyboard()
+            )
+
+        except Exception as e:
+            await self._reply_text(
+                update,
+                f"❌ **Lỗi thêm eSIM vào kho:** {str(e)}\n\n"
+                f"Vui lòng thử lại sau!",
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=self.get_back_keyboard()
+            )
+
+        return ConversationHandler.END
     
     async def show_main_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Hiển thị menu chính theo quyền của người dùng"""
@@ -1109,6 +1250,7 @@ class eSIMBot:
             return ConversationHandler.END
 
         context.user_data['lpa_string'] = lpa_string
+        context.user_data['description_mode'] = 'lpa'
         analysis = esim_tools.extract_sm_dp_and_activation(lpa_string)
 
         preview_text = "➕ **LƯU KẾT QUẢ VÀO KHO eSIM**\n\n"
@@ -1120,12 +1262,12 @@ class eSIMBot:
         else:
             preview_text += "🔑 **Activation Code:** _Không có_\n"
         preview_text += "\n🏷️ **Nhập mô tả cho eSIM này** (tùy chọn):\n\n"
-        preview_text += "Gửi `/skip` để bỏ qua mô tả\n"
-        preview_text += "Gửi `/cancel` để hủy"
+        preview_text += "Bạn có thể gửi mô tả, hoặc bấm nút bên dưới để bỏ qua/hủy."
 
         await query.message.reply_text(
             preview_text,
-            parse_mode=ParseMode.MARKDOWN
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=build_optional_description_keyboard()
         )
         return WAITING_ADD_ESIM_LPA_DESC
     
@@ -1212,6 +1354,7 @@ class eSIMBot:
             
             # Lưu LPA string để dùng sau
             context.user_data['lpa_string'] = lpa_string
+            context.user_data['description_mode'] = 'lpa'
             
             # Extract thông tin để hiển thị
             analysis = esim_tools.extract_sm_dp_and_activation(lpa_string)
@@ -1229,12 +1372,12 @@ class eSIMBot:
             preview_text += f"**Ví dụ:**\n"
             preview_text += f"• `eSIM Viettel 30GB`\n"
             preview_text += f"• `Vinaphone 5G Unlimited`\n\n"
-            preview_text += f"Gửi `/skip` để bỏ qua mô tả\n"
-            preview_text += f"Gửi `/cancel` để hủy"
+            preview_text += f"Bạn có thể gửi mô tả, hoặc bấm nút bên dưới để bỏ qua/hủy."
             
             await update.message.reply_text(
                 preview_text,
-                parse_mode=ParseMode.MARKDOWN
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=build_optional_description_keyboard()
             )
             return WAITING_ADD_ESIM_LPA_DESC
             
@@ -1252,46 +1395,7 @@ class eSIMBot:
         description = ""
         if update.message.text.strip() != "/skip":
             description = update.message.text.strip()
-        
-        lpa_string = context.user_data['lpa_string']
-        
-        try:
-            # Thêm eSIM vào kho bằng LPA string
-            esim_id = esim_storage.add_esim_from_lpa(lpa_string, description)
-            
-            # Log activity
-            user = update.effective_user
-            logger.info(f"[ADD eSIM] User: {user.username or user.id} | ID: {esim_id} | Type: LPA String | Desc: {description or 'N/A'}")
-            
-            # Extract thông tin để hiển thị
-            analysis = esim_tools.extract_sm_dp_and_activation(lpa_string)
-            
-            # Tạo response
-            response = f"✅ **ĐÃ THÊM eSIM VÀO KHO THÀNH CÔNG**\n\n"
-            response += f"🆔 **ID:** `{esim_id}`\n"
-            response += f"📋 **LPA String:** `{lpa_string}`\n"
-            response += f"📍 **SM-DP+:** `{analysis['sm_dp_address']}`\n"
-            if analysis['activation_code']:
-                response += f"🔑 **Activation Code:** `{analysis['activation_code']}`\n"
-            if description:
-                response += f"🏷️ **Mô tả:** {description}\n"
-            response += f"\n💡 **Ghi chú:** eSIM đã được lưu vào kho và sẵn sàng sử dụng"
-            
-            await update.message.reply_text(
-                response,
-                parse_mode=ParseMode.MARKDOWN,
-                reply_markup=self.get_storage_result_keyboard()
-            )
-            
-        except Exception as e:
-            await update.message.reply_text(
-                f"❌ **Lỗi thêm eSIM vào kho:** {str(e)}\n\n"
-                f"Vui lòng thử lại sau!",
-                parse_mode=ParseMode.MARKDOWN,
-                reply_markup=self.get_back_keyboard()
-            )
-        
-        return ConversationHandler.END
+        return await self._finish_add_esim_from_lpa(update, context, description)
     
     async def start_add_esim_smdp(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Bắt đầu thêm eSIM bằng SM-DP+ address"""
@@ -1334,9 +1438,9 @@ class eSIMBot:
         await update.message.reply_text(
             "✅ SM-DP+ Address hợp lệ!\n\n"
             "Bây giờ nhập **Activation Code** (tùy chọn):\n"
-            "Gửi `/skip` nếu không có mã kích hoạt\n"
-            "Gửi `/cancel` để hủy",
-            parse_mode=ParseMode.MARKDOWN
+            "Bạn có thể gửi mã, hoặc bấm nút bên dưới để bỏ qua/hủy.",
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=build_optional_activation_code_keyboard()
         )
         return WAITING_ADD_ESIM_CODE
     
@@ -1347,6 +1451,7 @@ class eSIMBot:
             activation_code = update.message.text.strip()
         
         context.user_data['activation_code'] = activation_code
+        context.user_data['description_mode'] = 'smdp'
         
         await update.message.reply_text(
             "🏷️ **Nhập mô tả cho eSIM này** (tùy chọn):\n\n"
@@ -1354,9 +1459,9 @@ class eSIMBot:
             "• `eSIM Viettel 30GB`\n"
             "• `Vinaphone 5G Unlimited`\n"
             "• `eSIM cho du lịch Thái Lan`\n\n"
-            "Gửi `/skip` để bỏ qua mô tả\n"
-            "Gửi `/cancel` để hủy",
-            parse_mode=ParseMode.MARKDOWN
+            "Bạn có thể gửi mô tả, hoặc bấm nút bên dưới để bỏ qua/hủy.",
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=build_optional_description_keyboard()
         )
         return WAITING_ADD_ESIM_DESC
     
@@ -1365,43 +1470,7 @@ class eSIMBot:
         description = ""
         if update.message.text.strip() != "/skip":
             description = update.message.text.strip()
-        
-        sm_dp_address = context.user_data['sm_dp_address']
-        activation_code = context.user_data['activation_code']
-        
-        try:
-            # Thêm eSIM vào kho
-            esim_id = esim_storage.add_esim(sm_dp_address, activation_code, description)
-            
-            # Log activity
-            user = update.effective_user
-            logger.info(f"[ADD eSIM] User: {user.username or user.id} | ID: {esim_id} | SM-DP+: {sm_dp_address} | Desc: {description or 'N/A'}")
-            
-            # Tạo response
-            response = f"✅ **ĐÃ THÊM eSIM VÀO KHO THÀNH CÔNG**\n\n"
-            response += f"🆔 **ID:** `{esim_id}`\n"
-            response += f"📍 **SM-DP+:** `{sm_dp_address}`\n"
-            if activation_code:
-                response += f"🔑 **Activation Code:** `{activation_code}`\n"
-            if description:
-                response += f"🏷️ **Mô tả:** {description}\n"
-            response += f"\n💡 **Ghi chú:** eSIM đã được lưu vào kho và sẵn sàng sử dụng"
-            
-            await update.message.reply_text(
-                response,
-                parse_mode=ParseMode.MARKDOWN,
-                reply_markup=self.get_storage_result_keyboard()
-            )
-            
-        except Exception as e:
-            await update.message.reply_text(
-                f"❌ **Lỗi thêm eSIM vào kho:** {str(e)}\n\n"
-                f"Vui lòng thử lại sau!",
-                parse_mode=ParseMode.MARKDOWN,
-                reply_markup=self.get_back_keyboard()
-            )
-        
-        return ConversationHandler.END
+        return await self._finish_add_esim_from_smdp(update, context, description)
     
     async def start_add_esim_url(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Bắt đầu thêm eSIM bằng URL"""
@@ -1487,6 +1556,7 @@ class eSIMBot:
             context.user_data['url'] = url
             context.user_data['sm_dp_from_url'] = analysis['sm_dp_address']
             context.user_data['code_from_url'] = analysis['activation_code'] or ""
+            context.user_data['description_mode'] = 'url'
             
             # Tạo LPA string từ thông tin đã extract
             if analysis['activation_code']:
@@ -1505,19 +1575,19 @@ class eSIMBot:
             if analysis['activation_code']:
                 preview_text += f"🔑 **Activation Code:** `{analysis['activation_code']}`\n"
             else:
-                preview_text += f"� **Atctivation Code:** _Không có_\n"
+                preview_text += f"🔑 **Activation Code:** _Không có_\n"
             preview_text += f"📋 **LPA String:** `{lpa_string}`\n"
             
             preview_text += f"\n🏷️ **Nhập mô tả cho eSIM này** (tùy chọn):\n\n"
             preview_text += f"**Ví dụ:**\n"
             preview_text += f"• `eSIM Viettel 30GB`\n"
             preview_text += f"• `Vinaphone 5G Unlimited`\n\n"
-            preview_text += f"Gửi `/skip` để bỏ qua mô tả\n"
-            preview_text += f"Gửi `/cancel` để hủy"
+            preview_text += f"Bạn có thể gửi mô tả, hoặc bấm nút bên dưới để bỏ qua/hủy."
             
             await update.message.reply_text(
                 preview_text,
-                parse_mode=ParseMode.MARKDOWN
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=build_optional_description_keyboard()
             )
             return WAITING_ADD_ESIM_URL_DESC
             
@@ -1560,46 +1630,55 @@ class eSIMBot:
         description = ""
         if update.message.text.strip() != "/skip":
             description = update.message.text.strip()
-        
-        lpa_string = context.user_data['lpa_from_url']
-        
-        try:
-            # Thêm eSIM vào kho bằng LPA string
-            esim_id = esim_storage.add_esim_from_lpa(lpa_string, description)
-            
-            # Log activity
-            user = update.effective_user
-            logger.info(f"[ADD eSIM] User: {user.username or user.id} | ID: {esim_id} | Type: URL | Desc: {description or 'N/A'}")
-            
-            # Extract thông tin để hiển thị
-            sm_dp_address = context.user_data['sm_dp_from_url']
-            activation_code = context.user_data['code_from_url']
-            
-            # Tạo response
-            response = f"✅ **ĐÃ THÊM eSIM VÀO KHO THÀNH CÔNG**\n\n"
-            response += f"🆔 **ID:** `{esim_id}`\n"
-            response += f"📍 **SM-DP+:** `{sm_dp_address}`\n"
-            if activation_code:
-                response += f"🔑 **Activation Code:** `{activation_code}`\n"
-            response += f"📋 **LPA String:** `{lpa_string}`\n"
-            if description:
-                response += f"🏷️ **Mô tả:** {description}\n"
-            response += f"\n💡 **Ghi chú:** eSIM đã được lưu vào kho và sẵn sàng sử dụng"
-            
-            await update.message.reply_text(
-                response,
-                parse_mode=ParseMode.MARKDOWN,
-                reply_markup=self.get_storage_result_keyboard()
-            )
-            
-        except Exception as e:
-            await update.message.reply_text(
-                f"❌ **Lỗi thêm eSIM vào kho:** {str(e)}\n\n"
-                f"Vui lòng thử lại sau!",
-                parse_mode=ParseMode.MARKDOWN,
-                reply_markup=self.get_back_keyboard()
-            )
-        
+        return await self._finish_add_esim_from_url(update, context, description)
+
+    async def skip_add_esim_code(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Bỏ qua activation code bằng inline button."""
+        query = update.callback_query
+        await query.answer()
+
+        context.user_data['activation_code'] = ""
+        context.user_data['description_mode'] = 'smdp'
+
+        await query.message.reply_text(
+            "🏷️ **Nhập mô tả cho eSIM này** (tùy chọn):\n\n"
+            "**Ví dụ:**\n"
+            "• `eSIM Viettel 30GB`\n"
+            "• `Vinaphone 5G Unlimited`\n"
+            "• `eSIM cho du lịch Thái Lan`\n\n"
+            "Bạn có thể gửi mô tả, hoặc bấm nút bên dưới để bỏ qua/hủy.",
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=build_optional_description_keyboard()
+        )
+        return WAITING_ADD_ESIM_DESC
+
+    async def skip_add_esim_description(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Bỏ qua mô tả bằng inline button và lưu eSIM."""
+        query = update.callback_query
+        await query.answer()
+
+        description_mode = context.user_data.get('description_mode')
+        if description_mode == 'lpa':
+            return await self._finish_add_esim_from_lpa(update, context, "")
+        if description_mode == 'smdp':
+            return await self._finish_add_esim_from_smdp(update, context, "")
+        if description_mode == 'url':
+            return await self._finish_add_esim_from_url(update, context, "")
+
+        await query.message.reply_text(
+            "❌ Không tìm thấy dữ liệu eSIM đang chờ lưu. Vui lòng bắt đầu lại.",
+            reply_markup=self.get_storage_keyboard()
+        )
+        return ConversationHandler.END
+
+    async def cancel_add_esim_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Hủy flow thêm eSIM bằng inline button."""
+        query = update.callback_query
+        await query.answer()
+        await query.message.reply_text(
+            "❌ Đã hủy thao tác thêm eSIM.",
+            reply_markup=self.get_storage_keyboard()
+        )
         return ConversationHandler.END
     
     async def view_available_esims(self, update: Update, context: ContextTypes.DEFAULT_TYPE):

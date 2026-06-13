@@ -5,6 +5,8 @@ from bot_constants import PUBLIC_CALLBACKS
 from bot_keyboards import (
     build_guide_menu_keyboard,
     build_main_menu_keyboard,
+    build_optional_activation_code_keyboard,
+    build_optional_description_keyboard,
     build_result_actions_keyboard,
     build_storage_result_keyboard,
 )
@@ -75,6 +77,18 @@ class BotSecurityTest(unittest.TestCase):
         self.assertIn("use_esim", data)
         self.assertIn("storage_menu", data)
         self.assertIn("back_to_menu", data)
+
+    def test_optional_activation_code_keyboard_has_skip_and_cancel(self):
+        data = callback_data(build_optional_activation_code_keyboard())
+
+        self.assertIn("skip_activation_code", data)
+        self.assertIn("cancel_add_esim", data)
+
+    def test_optional_description_keyboard_has_skip_and_cancel(self):
+        data = callback_data(build_optional_description_keyboard())
+
+        self.assertIn("skip_esim_description", data)
+        self.assertIn("cancel_add_esim", data)
 
     def test_myid_response_does_not_leak_admin_ids_to_non_admin(self):
         user = SimpleNamespace(

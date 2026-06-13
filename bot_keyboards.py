@@ -88,6 +88,20 @@ def build_storage_result_keyboard() -> InlineKeyboardMarkup:
     ])
 
 
+def build_optional_activation_code_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("⏭ Bỏ qua mã kích hoạt", callback_data="skip_activation_code")],
+        [InlineKeyboardButton("❌ Hủy", callback_data="cancel_add_esim")],
+    ])
+
+
+def build_optional_description_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("⏭ Bỏ qua mô tả", callback_data="skip_esim_description")],
+        [InlineKeyboardButton("❌ Hủy", callback_data="cancel_add_esim")],
+    ])
+
+
 def build_storage_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🏪 Về Menu Kho", callback_data="storage_menu")],
