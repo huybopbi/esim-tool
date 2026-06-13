@@ -54,6 +54,21 @@ Ghi chú:
 - Mỗi block có thể tự khai dòng `SM-DP+:` để ghi đè SM-DP+ chung, hoặc dán
   thẳng một dòng `LPA:1$...$...`.
 
+#### 🎯 Sử dụng eSIM từ kho
+Bấm **"🎯 Sử dụng eSIM"** → chọn một eSIM → nhập **ghi chú** (tùy chọn, ví dụ
+tên/khách hàng đã cài) hoặc bấm **"⏭ Bỏ qua ghi chú"**. Bot xuất QR + link cài
+đặt, đồng thời chuyển eSIM sang mục **Đã dùng** kèm **ngày giờ** và **ghi chú**.
+Mục **"📊 eSIM Đã dùng"** hiển thị lại ngày giờ, ghi chú và người thao tác.
+
+#### 🗑 Xóa eSIM
+Bấm **"🗑 Xóa eSIM"**. Mọi thao tác đều có **bước xác nhận** và
+**không thể hoàn tác**:
+- **🗑 Xóa từng eSIM:** chọn một eSIM trong danh sách (✅ có sẵn / 🔴 đã dùng) để xóa.
+- **🧹 Xóa hết eSIM đã dùng:** xóa toàn bộ eSIM trạng thái đã dùng, giữ lại eSIM còn sẵn.
+- **💣 Xóa toàn bộ kho:** xóa sạch toàn bộ dữ liệu kho.
+
+> ⚠️ Nên backup `esim_storage.db` trước khi dùng **Xóa toàn bộ kho**.
+
 > Tính năng Check ICCID/SimplifyTrip đã bị gỡ bỏ.
 
 ## 🔐 Phân quyền
@@ -199,11 +214,15 @@ esim-tool/
 ├── bot_user_info.py          # Format phản hồi /myid
 ├── config.example.py         # Template config
 ├── config.py                 # Config thật, không commit
-├── esim_tools.py             # Xử lý LPA/link/QR
-├── esim_storage.py           # Quản lý kho eSIM SQLite
+├── esim_tools.py             # Xử lý LPA/link/QR, parser thêm hàng loạt
+├── esim_storage.py           # Quản lý kho eSIM SQLite (ICCID, ghi chú đã dùng)
 ├── esim_storage.db           # Database runtime, không commit
 ├── requirements.txt          # Python dependencies
-├── tests/                    # Unit tests
+├── tests/                    # Unit & integration tests
+│   ├── test_esim_tools.py    # LPA/QR + parser thêm hàng loạt
+│   ├── test_esim_storage.py  # Kho SQLite, migration, xóa
+│   ├── test_bulk_flow.py     # Luồng thêm hàng loạt & dùng eSIM (ghi chú)
+│   └── test_bot_security.py  # Phân quyền keyboard & /myid
 └── README.md
 ```
 
