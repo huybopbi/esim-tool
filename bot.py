@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import warnings
 
@@ -508,12 +509,12 @@ class eSIMBot:
                         import requests
                         logger.info(f"Trying to download image from URL")
                         
-                        response = requests.get(data, timeout=30)
+                        response = await asyncio.to_thread(requests.get, data, timeout=30)
                         response.raise_for_status()
                         image_data = response.content
                         
-                        # Analyze QR from image
-                        analysis = esim_tools.analyze_qr_image(image_data)
+                        # Analyze QR from image (chạy off-thread để không block event loop)
+                        analysis = await asyncio.to_thread(esim_tools.analyze_qr_image, image_data)
                         
                         if not analysis['qr_detected']:
                             await processing_msg.delete()
@@ -927,8 +928,8 @@ class eSIMBot:
             # Download file
             file_data = await file.download_as_bytearray()
             
-            # Phân tích QR từ ảnh
-            analysis = esim_tools.analyze_qr_image(bytes(file_data))
+            # Phân tích QR từ ảnh (chạy off-thread để không block event loop)
+            analysis = await asyncio.to_thread(esim_tools.analyze_qr_image, bytes(file_data))
             
             # Xóa message đang xử lý
             await processing_msg.delete()
@@ -1524,14 +1525,14 @@ class eSIMBot:
             # Import requests để download ảnh
             import requests
             
-            # Download ảnh từ URL
-            response = requests.get(url, timeout=30)
+            # Download ảnh từ URL (chạy off-thread để không block event loop)
+            response = await asyncio.to_thread(requests.get, url, timeout=30)
             response.raise_for_status()
             
             image_data = response.content
             
-            # Phân tích QR từ ảnh
-            analysis = esim_tools.analyze_qr_image(image_data)
+            # Phân tích QR từ ảnh (chạy off-thread)
+            analysis = await asyncio.to_thread(esim_tools.analyze_qr_image, image_data)
             
             # Xóa message đang xử lý
             await processing_msg.delete()
@@ -2301,7 +2302,12 @@ Gửi /cancel để hủy thao tác hiện tại
     def run(self):
         """Chạy bot"""
         # Tạo application
-        self.application = Application.builder().token(BOT_TOKEN).build()
+        self.application = (
+            Application.builder()
+            .token(BOT_TOKEN)
+            .concurrent_updates(True)
+            .build()
+        )
         
         # Thiết lập handlers
         self.setup_handlers()
