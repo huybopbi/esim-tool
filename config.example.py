@@ -11,18 +11,6 @@ BOT_TOKEN = os.getenv('BOT_TOKEN', 'YOUR_BOT_TOKEN_HERE')
 ADMIN_IDS = [123456789]  # Thay bằng Telegram user ID của bạn
 
 # =============================================================================
-# SIMPLIFYTRIP API (Check ICCID)
-# =============================================================================
-
-SIMPLIFYTRIP_API_URL = "https://api.simplifytrip.com/api/v1/products/iccid"
-SIMPLIFYTRIP_EMAIL = "your_email@example.com"
-SIMPLIFYTRIP_PASSWORD = "your_password"
-
-# Proxy cho VPS (để trống nếu không dùng)
-# Format: "http://user:pass@host:port" hoặc "http://host:port"
-SIMPLIFYTRIP_PROXY = ""  # Ví dụ: "http://proxy.example.com:8080"
-
-# =============================================================================
 # MESSAGES
 # =============================================================================
 
@@ -32,7 +20,6 @@ MESSAGES = {
 📱 **Công cụ eSIM**
 • Tạo link cài eSIM cho iPhone
 • Tạo QR code cho iPhone & Android
-• Check thông tin eSIM từ ICCID
 
 ❓ **Hướng dẫn**
 • Cài eSIM trên iPhone/Android

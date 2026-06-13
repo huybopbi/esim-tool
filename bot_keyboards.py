@@ -5,7 +5,6 @@ def build_main_menu_keyboard(is_admin: bool = False) -> InlineKeyboardMarkup:
     keyboard = [
         [
             InlineKeyboardButton("📱 Công cụ eSIM", callback_data="create_link_qr"),
-            InlineKeyboardButton("🔍 Check ICCID", callback_data="check_iccid"),
         ],
         [
             InlineKeyboardButton("❓ Hướng dẫn", callback_data="guide_menu"),
@@ -51,7 +50,7 @@ def build_result_actions_keyboard(
     keyboard = [
         [
             InlineKeyboardButton("🔁 Tạo mã khác", callback_data="create_link_qr"),
-            InlineKeyboardButton("🔍 Check ICCID", callback_data="check_iccid"),
+            InlineKeyboardButton("❓ Hướng dẫn", callback_data="guide_menu"),
         ],
     ]
 

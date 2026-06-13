@@ -1,6 +1,6 @@
 # 🤖 eSIM Support Bot
 
-Bot Telegram hỗ trợ tạo link cài đặt, QR code eSIM và kiểm tra thông tin eSIM từ ICCID.
+Bot Telegram hỗ trợ tạo link cài đặt, QR code eSIM và quản lý kho eSIM.
 
 ## ✨ Tính năng chính
 
@@ -14,13 +14,6 @@ Tự động nhận diện và xử lý nhiều định dạng:
 - ✅ Link cài đặt cho iPhone (iOS 17.4+)
 - ✅ QR code để quét (iPhone & Android)
 
-### 🔍 Check ICCID
-Kiểm tra thông tin eSIM từ mã ICCID:
-- Trạng thái gói cước
-- Dung lượng còn lại
-- Thời gian sử dụng
-- Lịch sử hoạt động
-
 ### 🏪 Kho eSIM (Chỉ Admin)
 - Thêm eSIM vào kho (LPA/URL/SM-DP+)
 - Sử dụng eSIM từ kho
@@ -31,7 +24,6 @@ Kiểm tra thông tin eSIM từ mã ICCID:
 | Chức năng | Mọi người | Admin |
 |-----------|:---------:|:-----:|
 | 🔗 Tạo Link & QR | ✅ | ✅ |
-| 🔍 Check ICCID | ✅ | ✅ |
 | 🏪 Kho eSIM | ❌ | ✅ |
 
 ## 🚀 Cài đặt
@@ -56,10 +48,6 @@ Chỉnh sửa `config.py`:
 ```python
 BOT_TOKEN = "your_bot_token_here"
 ADMIN_IDS = [123456789]  # Telegram user ID của bạn
-
-# SimplifyTrip API (để check ICCID)
-SIMPLIFYTRIP_EMAIL = "your_email"
-SIMPLIFYTRIP_PASSWORD = "your_password"
 ```
 
 ### 4. Chạy bot
@@ -76,8 +64,6 @@ esim-tool/
 ├── config.example.py         # Template config
 ├── esim_tools.py             # Xử lý eSIM (link, QR)
 ├── esim_storage.py           # Quản lý kho eSIM
-├── simplifytrip_api.py       # API check ICCID
-├── simplifytrip_cookies.json # Token đã lưu (auto)
 ├── esim_storage.db           # Database SQLite
 ├── requirements.txt          # Dependencies
 └── README.md
@@ -95,16 +81,8 @@ esim-tool/
 ## 🔒 Bảo mật
 
 Các file **KHÔNG** được commit lên GitHub:
-- `config.py` - Chứa BOT_TOKEN, password
-- `simplifytrip_cookies.json` - Token đăng nhập
+- `config.py` - Chứa BOT_TOKEN
 - `esim_storage.db` - Database eSIM
-
-## 🛠️ API SimplifyTrip
-
-Bot tự động quản lý token:
-- Auto login khi khởi động
-- Auto refresh token trước khi hết hạn (1 giờ)
-- Lưu cookies vào file để không cần login lại
 
 ## 📄 License
 

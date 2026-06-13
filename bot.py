@@ -22,7 +22,6 @@ from bot_constants import (
     WAITING_ADD_ESIM_URL,
     WAITING_ADD_ESIM_URL_DESC,
     WAITING_ESIM_SELECTION,
-    WAITING_ICCID,
     WAITING_LPA_STRING,
     WAITING_QR_DATA,
     WAITING_QR_IMAGE,
@@ -43,7 +42,6 @@ from bot_user_info import format_user_id_response
 from config import BOT_TOKEN, MESSAGES, ADMIN_IDS
 from esim_tools import esim_tools
 from esim_storage import esim_storage
-from simplifytrip_api import simplifytrip_api
 
 # Logging setup - Clean và chỉ hiển thị thông tin quan trọng
 logging.basicConfig(
@@ -130,10 +128,6 @@ class eSIMBot:
         await query.answer()
         
         # Các chức năng mọi người đều dùng được
-        if query.data == "check_iccid":
-            await self.start_check_iccid(update, context)
-            return
-        
         if query.data == "create_link_qr":
             await self.start_create_link_qr(update, context)
             return
@@ -2017,70 +2011,6 @@ Gửi /cancel để hủy thao tác hiện tại
     
     async def debug_message_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Debug handler để log tất cả messages"""
-    
-    # ==================== CHECK ICCID HANDLERS ====================
-    
-    async def start_check_iccid(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Bắt đầu flow check ICCID"""
-        query = update.callback_query
-        
-        reply_markup = build_back_keyboard()
-        
-        await query.edit_message_text(
-            "🔍 **CHECK THÔNG TIN eSIM**\n\n"
-            "Vui lòng gửi **mã ICCID** của eSIM cần kiểm tra.\n\n"
-            "📋 ICCID thường có 19-20 chữ số, bắt đầu bằng 89...\n\n"
-            "Gửi /cancel để hủy",
-            reply_markup=reply_markup,
-            parse_mode=ParseMode.MARKDOWN
-        )
-        
-        return WAITING_ICCID
-    
-    async def handle_iccid_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Xử lý ICCID được gửi từ user"""
-        user = update.effective_user
-        iccid = update.message.text.strip()
-        
-        logger.info(f"[CHECK ICCID] User: {user.username or user.id} | ICCID: {iccid}")
-        
-        # Gửi thông báo đang xử lý
-        processing_msg = await update.message.reply_text(
-            "⏳ Đang kiểm tra thông tin eSIM...",
-            parse_mode=ParseMode.MARKDOWN
-        )
-        
-        # Gọi API
-        result = simplifytrip_api.check_iccid(iccid)
-        
-        reply_markup = build_result_actions_keyboard(
-            is_admin=user.id in ADMIN_IDS,
-            can_save=False
-        )
-        
-        if result['success']:
-            # Format và gửi thông tin
-            formatted_info = simplifytrip_api.format_esim_info(result['data'])
-            plan_status = result['data'].get('planStatus', 'N/A')
-            logger.info(f"[CHECK ICCID] Success | ICCID: {iccid} | Status: {plan_status}")
-            
-            await processing_msg.edit_text(
-                formatted_info,
-                reply_markup=reply_markup,
-                parse_mode=ParseMode.MARKDOWN
-            )
-        else:
-            logger.warning(f"[CHECK ICCID] Failed | ICCID: {iccid} | Error: {result['error']}")
-            # Gửi thông báo lỗi
-            await processing_msg.edit_text(
-                f"❌ **Không thể kiểm tra ICCID**\n\n"
-                f"**Lý do:** {result['error']}\n\n"
-                f"**ICCID đã nhập:** `{iccid}`",
-                reply_markup=reply_markup,
-                parse_mode=ParseMode.MARKDOWN
-            )
-        
-        return ConversationHandler.END
     
     def setup_handlers(self):
         """Thiết lập các handlers cho bot"""

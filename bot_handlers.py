@@ -15,7 +15,6 @@ from bot_constants import (
     WAITING_ADD_ESIM_URL,
     WAITING_ADD_ESIM_URL_DESC,
     WAITING_ESIM_SELECTION,
-    WAITING_ICCID,
     WAITING_SM_DP_LINK,
 )
 from config import ADMIN_IDS
@@ -117,28 +116,9 @@ def setup_bot_handlers(bot):
         per_user=True,
     )
 
-    check_iccid_handler = ConversationHandler(
-        entry_points=[
-            CallbackQueryHandler(bot.start_check_iccid, pattern="^check_iccid$")
-        ],
-        states={
-            WAITING_ICCID: [
-                MessageHandler(
-                    filters.TEXT & ~filters.COMMAND,
-                    bot.handle_iccid_input,
-                )
-            ],
-        },
-        fallbacks=[CommandHandler("cancel", bot.cancel)],
-        per_message=False,
-        per_chat=True,
-        per_user=True,
-    )
-
     bot.application.add_handler(create_link_qr_handler, group=1)
     bot.application.add_handler(add_esim_handler, group=1)
     bot.application.add_handler(use_esim_handler, group=1)
-    bot.application.add_handler(check_iccid_handler, group=1)
 
     bot.application.add_handler(CallbackQueryHandler(bot.button_handler), group=1)
     bot.application.add_handler(CallbackQueryHandler(bot.unauthorized_callback), group=2)

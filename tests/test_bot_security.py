@@ -24,8 +24,8 @@ class BotSecurityTest(unittest.TestCase):
         data = callback_data(build_main_menu_keyboard(is_admin=False))
 
         self.assertIn("create_link_qr", data)
-        self.assertIn("check_iccid", data)
         self.assertIn("guide_menu", data)
+        self.assertNotIn("check_iccid", data)
         self.assertNotIn("storage_menu", data)
 
     def test_main_menu_shows_storage_for_admin(self):
@@ -55,8 +55,9 @@ class BotSecurityTest(unittest.TestCase):
         data = callback_data(build_result_actions_keyboard(is_admin=False, can_save=True))
 
         self.assertIn("create_link_qr", data)
-        self.assertIn("check_iccid", data)
+        self.assertIn("guide_menu", data)
         self.assertIn("back_to_menu", data)
+        self.assertNotIn("check_iccid", data)
         self.assertNotIn("save_last_esim", data)
         self.assertNotIn("storage_menu", data)
 

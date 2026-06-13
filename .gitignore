@@ -89,7 +89,6 @@ env.bak/
 venv.bak/
 config.py
 esim_storage.db
-simplifytrip_cookies.json
 # Spyder project settings
 .spyderproject
 .spyproject
