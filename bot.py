@@ -27,6 +27,7 @@ from bot_constants import (
     WAITING_BULK_SM_DP_CUSTOM,
     WAITING_BULK_SMDP_CHOICE,
     WAITING_ESIM_SELECTION,
+    WAITING_USE_ESIM_NOTE,
     WAITING_LPA_STRING,
     WAITING_QR_DATA,
     WAITING_QR_IMAGE,
@@ -38,6 +39,7 @@ from bot_keyboards import (
     build_back_keyboard,
     build_bulk_smdp_keyboard,
     build_cancel_keyboard,
+    build_use_note_keyboard,
     build_guide_menu_keyboard,
     build_main_menu_keyboard,
     build_optional_activation_code_keyboard,
@@ -2033,26 +2035,100 @@ class eSIMBot:
                 )
             return ConversationHandler.END
         
+        # Lưu eSIM đang chọn, hỏi ghi chú (cài cho ai) trước khi xuất QR
+        context.user_data['use_esim_id'] = esim_id
+        
+        prompt = f"🎯 **DÙNG eSIM** `{esim.id}`\n\n"
+        prompt += f"📍 **SM-DP+:** `{esim.sm_dp_address}`\n"
+        if esim.description:
+            prompt += f"🏷️ **Mô tả:** {esim.description}\n"
+        prompt += (
+            "\n📝 **Nhập ghi chú: eSIM này cài cho ai?**\n\n"
+            "**Ví dụ:**\n"
+            "• `Nguyễn Văn A - 0901234567`\n"
+            "• `Khách lẻ - đơn #1234`\n\n"
+            "Bạn có thể gửi ghi chú, hoặc bấm nút bên dưới để bỏ qua/hủy."
+        )
+        
+        try:
+            await query.edit_message_text(
+                prompt,
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=build_use_note_keyboard()
+            )
+        except Exception as e:
+            logger.warning(f"Could not edit message, sending new one: {e}")
+            await query.message.reply_text(
+                prompt,
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=build_use_note_keyboard()
+            )
+        
+        return WAITING_USE_ESIM_NOTE
+    
+    async def handle_use_esim_note(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Nhận ghi chú (cài cho ai) và hoàn tất dùng eSIM."""
+        note = ""
+        if update.message.text.strip() != "/skip":
+            note = update.message.text.strip()
+        return await self._finish_use_esim(update, context, note)
+    
+    async def skip_use_esim_note(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Bỏ qua ghi chú và hoàn tất dùng eSIM."""
+        query = update.callback_query
+        await query.answer()
+        return await self._finish_use_esim(update, context, "")
+    
+    async def cancel_use_esim_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Hủy thao tác dùng eSIM (eSIM vẫn còn trong kho)."""
+        query = update.callback_query
+        await query.answer()
+        context.user_data.pop('use_esim_id', None)
+        await query.message.reply_text(
+            "❌ Đã hủy thao tác dùng eSIM (eSIM vẫn còn trong kho).",
+            reply_markup=self.get_storage_keyboard()
+        )
+        return ConversationHandler.END
+    
+    async def _finish_use_esim(self, update: Update, context: ContextTypes.DEFAULT_TYPE, used_note: str = ""):
+        """Tạo QR/link, đánh dấu đã dùng (kèm ghi chú) và gửi kết quả."""
+        esim_id = context.user_data.get('use_esim_id')
+        message = update.effective_message
+        
+        esim = esim_storage.get_esim_by_id(esim_id) if esim_id else None
+        if not esim or esim.status != 'available':
+            await message.reply_text(
+                "❌ **eSIM không tồn tại hoặc đã được sử dụng!**",
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=self.get_storage_keyboard()
+            )
+            context.user_data.pop('use_esim_id', None)
+            return ConversationHandler.END
+        
         try:
             # Tạo QR code và link từ eSIM
             qr_image, lpa_string = esim_tools.create_qr_from_lpa(esim.lpa_string)
             install_link = f"https://esimsetup.apple.com/esim_qrcode_provisioning?carddata={esim.lpa_string}"
             
-            # Đánh dấu eSIM đã sử dụng
+            # Đánh dấu eSIM đã sử dụng (kèm ghi chú cài cho ai)
             user_info = f"{update.effective_user.id} (@{update.effective_user.username})"
-            success = esim_storage.mark_esim_used(esim_id, user_info)
+            success = esim_storage.mark_esim_used(esim_id, user_info, used_note)
             
             if not success:
-                await query.edit_message_text(
+                await message.reply_text(
                     "❌ **Không thể sử dụng eSIM này (có thể đã được sử dụng)!**",
                     parse_mode=ParseMode.MARKDOWN,
                     reply_markup=self.get_storage_keyboard()
                 )
+                context.user_data.pop('use_esim_id', None)
                 return ConversationHandler.END
             
             # Log activity
             user = update.effective_user
-            logger.info(f"[USE eSIM] User: {user.username or user.id} | ID: {esim_id} | SM-DP+: {esim.sm_dp_address}")
+            logger.info(
+                f"[USE eSIM] User: {user.username or user.id} | ID: {esim_id} | "
+                f"SM-DP+: {esim.sm_dp_address} | Note: {used_note or 'N/A'}"
+            )
             
             # Tạo response message
             response = f"✅ **ĐÃ SỬ DỤNG eSIM TỪ KHO**\n\n"
@@ -2064,38 +2140,29 @@ class eSIMBot:
                 response += f"📲 **ICCID:** `{esim.iccid}`\n"
             if esim.description:
                 response += f"🏷️ **Mô tả:** {esim.description}\n"
+            if used_note:
+                response += f"🎯 **Cài cho:** {used_note}\n"
             
             response += f"\n📋 **LPA String:** `{esim.lpa_string}`\n"
             response += f"🔗 **Link cài đặt iPhone:**\n`{install_link}`"
             
             # Gửi QR code với thông tin
-            await query.message.reply_photo(
+            await message.reply_photo(
                 photo=qr_image,
                 caption=response,
                 parse_mode=ParseMode.MARKDOWN,
                 reply_markup=self.get_storage_result_keyboard()
             )
             
-            # Xóa message cũ
-            await query.delete_message()
-            
         except Exception as e:
-            try:
-                await query.edit_message_text(
-                    f"❌ **Lỗi sử dụng eSIM:** {str(e)}\n\n"
-                    f"Vui lòng thử lại!",
-                    parse_mode=ParseMode.MARKDOWN,
-                    reply_markup=self.get_storage_keyboard()
-                )
-            except Exception as ex:
-                logger.warning(f"Could not edit message, sending new one: {ex}")
-                await query.message.reply_text(
-                    f"❌ **Lỗi sử dụng eSIM:** {str(e)}\n\n"
-                    f"Vui lòng thử lại!",
-                    parse_mode=ParseMode.MARKDOWN,
-                    reply_markup=self.get_storage_keyboard()
-                )
+            await message.reply_text(
+                f"❌ **Lỗi sử dụng eSIM:** {str(e)}\n\n"
+                f"Vui lòng thử lại!",
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=self.get_storage_keyboard()
+            )
         
+        context.user_data.pop('use_esim_id', None)
         return ConversationHandler.END
     
     async def view_used_esims(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2138,7 +2205,10 @@ class eSIMBot:
                 response += f"📲 ICCID: `{esim.iccid}`\n"
             if esim.description:
                 response += f"🏷️ {esim.description}\n"
-            response += f"📅 Dùng: {esim.used_date[:10] if esim.used_date else 'N/A'}\n"
+            used_dt = esim.used_date.replace('T', ' ')[:16] if esim.used_date else 'N/A'
+            response += f"📅 Dùng: {used_dt}\n"
+            if esim.used_note:
+                response += f"🎯 Cài cho: {esim.used_note}\n"
             if esim.used_by:
                 response += f"👤 Bởi: {esim.used_by}\n"
             response += "\n"

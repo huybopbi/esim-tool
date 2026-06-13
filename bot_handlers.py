@@ -19,6 +19,7 @@ from bot_constants import (
     WAITING_BULK_SMDP_CHOICE,
     WAITING_ESIM_SELECTION,
     WAITING_SM_DP_LINK,
+    WAITING_USE_ESIM_NOTE,
 )
 from config import ADMIN_IDS
 
@@ -147,6 +148,21 @@ def setup_bot_handlers(bot):
         states={
             WAITING_ESIM_SELECTION: [
                 CallbackQueryHandler(bot.handle_esim_selection, pattern="^select_esim_")
+            ],
+            WAITING_USE_ESIM_NOTE: [
+                CallbackQueryHandler(
+                    bot.skip_use_esim_note,
+                    pattern="^skip_use_note$",
+                ),
+                CallbackQueryHandler(
+                    bot.cancel_use_esim_callback,
+                    pattern="^cancel_use_esim$",
+                ),
+                CommandHandler("skip", bot.handle_use_esim_note),
+                MessageHandler(
+                    filters.TEXT & ~filters.COMMAND & admin_filter,
+                    bot.handle_use_esim_note,
+                ),
             ],
         },
         fallbacks=[CommandHandler("cancel", bot.cancel)],

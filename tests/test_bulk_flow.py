@@ -25,7 +25,10 @@ def make_callback_update(data, user_id=ADMIN_ID):
     query.data = data
     query.answer = AsyncMock()
     query.edit_message_text = AsyncMock()
+    query.delete_message = AsyncMock()
     query.message.reply_text = AsyncMock()
+    query.message.reply_photo = AsyncMock()
+    update.effective_message = query.message
     return update
 
 
@@ -36,6 +39,8 @@ def make_message_update(text, user_id=ADMIN_ID):
     update.callback_query = None
     update.message.text = text
     update.message.reply_text = AsyncMock()
+    update.message.reply_photo = AsyncMock()
+    update.effective_message = update.message
     return update
 
 
@@ -141,6 +146,74 @@ class BulkFlowIntegrationTest(unittest.IsolatedAsyncioTestCase):
 
         state = await self.bot.start_bulk_add_esim(update, context)
         self.assertEqual(state, ConversationHandler.END)
+
+
+class UseEsimNoteFlowTest(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        fd, self.db_path = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
+        os.remove(self.db_path)
+        self.storage = eSIMStorage(db_path=self.db_path)
+        self._original_storage = botmod.esim_storage
+        botmod.esim_storage = self.storage
+        self.bot = botmod.eSIMBot()
+        self.esim_id = self.storage.add_esim_from_lpa(
+            "LPA:1$rsp.esim.exchange$CODE-1"
+        )
+
+    def tearDown(self):
+        botmod.esim_storage = self._original_storage
+        if os.path.exists(self.db_path):
+            os.remove(self.db_path)
+
+    async def test_select_then_note_marks_used_with_note(self):
+        from bot_constants import WAITING_USE_ESIM_NOTE
+
+        context = make_context()
+
+        state = await self.bot.handle_esim_selection(
+            make_callback_update(f"select_esim_{self.esim_id}"), context
+        )
+        self.assertEqual(state, WAITING_USE_ESIM_NOTE)
+        self.assertEqual(context.user_data["use_esim_id"], self.esim_id)
+
+        state = await self.bot.handle_use_esim_note(
+            make_message_update("Nguyễn Văn A - 0901234567"), context
+        )
+        self.assertEqual(state, ConversationHandler.END)
+
+        entry = self.storage.get_esim_by_id(self.esim_id)
+        self.assertEqual(entry.status, "used")
+        self.assertEqual(entry.used_note, "Nguyễn Văn A - 0901234567")
+
+    async def test_skip_note_marks_used_without_note(self):
+        context = make_context()
+
+        await self.bot.handle_esim_selection(
+            make_callback_update(f"select_esim_{self.esim_id}"), context
+        )
+        state = await self.bot.skip_use_esim_note(
+            make_callback_update("skip_use_note"), context
+        )
+        self.assertEqual(state, ConversationHandler.END)
+
+        entry = self.storage.get_esim_by_id(self.esim_id)
+        self.assertEqual(entry.status, "used")
+        self.assertEqual(entry.used_note, "")
+
+    async def test_cancel_use_keeps_esim_available(self):
+        context = make_context()
+
+        await self.bot.handle_esim_selection(
+            make_callback_update(f"select_esim_{self.esim_id}"), context
+        )
+        state = await self.bot.cancel_use_esim_callback(
+            make_callback_update("cancel_use_esim"), context
+        )
+        self.assertEqual(state, ConversationHandler.END)
+
+        entry = self.storage.get_esim_by_id(self.esim_id)
+        self.assertEqual(entry.status, "available")
 
 
 if __name__ == "__main__":

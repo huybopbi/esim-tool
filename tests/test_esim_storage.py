@@ -58,6 +58,38 @@ class ESIMStorageBulkTest(unittest.TestCase):
         self.assertEqual(entry.iccid, "9999")
         self.assertEqual(entry.activation_code, "CODE123")
 
+    def test_mark_esim_used_stores_note_and_datetime(self):
+        esim_id = self.storage.add_esim_from_lpa("LPA:1$rsp.esim.exchange$CODE-1")
+
+        ok = self.storage.mark_esim_used(
+            esim_id,
+            "1000 (@admin)",
+            used_note="Nguyễn Văn A - 0901234567",
+        )
+        self.assertTrue(ok)
+
+        entry = self.storage.get_esim_by_id(esim_id)
+        self.assertEqual(entry.status, "used")
+        self.assertEqual(entry.used_note, "Nguyễn Văn A - 0901234567")
+        self.assertEqual(entry.used_by, "1000 (@admin)")
+        # used_date là ISO timestamp đầy đủ (có cả ngày và giờ)
+        self.assertIsNotNone(entry.used_date)
+        self.assertIn("T", entry.used_date)
+
+        used = self.storage.get_used_esims()
+        self.assertEqual(len(used), 1)
+        self.assertEqual(used[0].used_note, "Nguyễn Văn A - 0901234567")
+
+    def test_mark_esim_used_without_note(self):
+        esim_id = self.storage.add_esim_from_lpa("LPA:1$rsp.esim.exchange$CODE-2")
+
+        ok = self.storage.mark_esim_used(esim_id, "1000 (@admin)")
+        self.assertTrue(ok)
+
+        entry = self.storage.get_esim_by_id(esim_id)
+        self.assertEqual(entry.status, "used")
+        self.assertEqual(entry.used_note, "")
+
 
 class ESIMStorageMigrationTest(unittest.TestCase):
     def setUp(self):
@@ -118,11 +150,13 @@ class ESIMStorageMigrationTest(unittest.TestCase):
         columns = {row[1] for row in cursor.fetchall()}
         conn.close()
         self.assertIn("iccid", columns)
+        self.assertIn("used_note", columns)
 
         entry = storage.get_esim_by_id("legacy01")
         self.assertIsNotNone(entry)
         self.assertEqual(entry.activation_code, "OLDCODE")
         self.assertIsNone(entry.iccid)
+        self.assertIsNone(entry.used_note)
 
         new_id = storage.add_esim_from_lpa(
             "LPA:1$rsp.esim.exchange$NEWCODE",
@@ -130,6 +164,13 @@ class ESIMStorageMigrationTest(unittest.TestCase):
         )
         new_entry = storage.get_esim_by_id(new_id)
         self.assertEqual(new_entry.iccid, "5555")
+
+        # eSIM cũ vẫn dùng được và lưu được ghi chú sau migration
+        self.assertTrue(
+            storage.mark_esim_used("legacy01", "1000 (@admin)", "Khách cũ")
+        )
+        used_entry = storage.get_esim_by_id("legacy01")
+        self.assertEqual(used_entry.used_note, "Khách cũ")
 
 
 if __name__ == "__main__":

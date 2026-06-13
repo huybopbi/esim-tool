@@ -17,7 +17,8 @@
     WAITING_BULK_SMDP_CHOICE,
     WAITING_BULK_SM_DP_CUSTOM,
     WAITING_BULK_LIST,
-) = range(18)
+    WAITING_USE_ESIM_NOTE,
+) = range(19)
 
 # SM-DP+ dựng sẵn cho thêm hàng loạt
 BULK_SM_DP_PRESETS = {

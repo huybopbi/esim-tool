@@ -141,3 +141,10 @@ def build_cancel_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("❌ Hủy", callback_data="cancel_add_esim")],
     ])
+
+
+def build_use_note_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("⏭ Bỏ qua ghi chú", callback_data="skip_use_note")],
+        [InlineKeyboardButton("❌ Hủy", callback_data="cancel_use_esim")],
+    ])

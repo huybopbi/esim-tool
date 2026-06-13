@@ -22,6 +22,7 @@ class eSIMEntry:
     used_by: Optional[str] = None
     lpa_string: Optional[str] = None
     iccid: Optional[str] = None
+    used_note: Optional[str] = None
 
     def to_dict(self) -> Dict:
         return asdict(self)
@@ -55,16 +56,20 @@ class eSIMStorage:
                     used_date TEXT,
                     used_by TEXT,
                     lpa_string TEXT,
-                    iccid TEXT
+                    iccid TEXT,
+                    used_note TEXT
                 )
             ''')
             
-            # Migration: thêm cột iccid cho database cũ chưa có
+            # Migration: thêm cột mới cho database cũ chưa có
             cursor.execute("PRAGMA table_info(esim_entries)")
             existing_columns = {row[1] for row in cursor.fetchall()}
             if 'iccid' not in existing_columns:
                 cursor.execute('ALTER TABLE esim_entries ADD COLUMN iccid TEXT')
                 logger.info("Migrated esim_entries: added iccid column")
+            if 'used_note' not in existing_columns:
+                cursor.execute('ALTER TABLE esim_entries ADD COLUMN used_note TEXT')
+                logger.info("Migrated esim_entries: added used_note column")
             
             # Tạo index cho tìm kiếm nhanh
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_status ON esim_entries(status)')
@@ -253,7 +258,8 @@ class eSIMStorage:
                     'used_date': row[6],
                     'used_by': row[7],
                     'lpa_string': row[8],
-                    'iccid': row[9] if len(row) > 9 else None
+                    'iccid': row[9] if len(row) > 9 else None,
+                    'used_note': row[10] if len(row) > 10 else None
                 }
                 entries.append(eSIMEntry.from_dict(entry_dict))
             
@@ -291,7 +297,8 @@ class eSIMStorage:
                     'used_date': row[6],
                     'used_by': row[7],
                     'lpa_string': row[8],
-                    'iccid': row[9] if len(row) > 9 else None
+                    'iccid': row[9] if len(row) > 9 else None,
+                    'used_note': row[10] if len(row) > 10 else None
                 }
                 entries.append(eSIMEntry.from_dict(entry_dict))
             
@@ -322,7 +329,8 @@ class eSIMStorage:
                     'used_date': row[6],
                     'used_by': row[7],
                     'lpa_string': row[8],
-                    'iccid': row[9] if len(row) > 9 else None
+                    'iccid': row[9] if len(row) > 9 else None,
+                    'used_note': row[10] if len(row) > 10 else None
                 }
                 return eSIMEntry.from_dict(entry_dict)
             
@@ -332,24 +340,24 @@ class eSIMStorage:
             logger.error(f"Error getting eSIM by ID: {e}")
             return None
     
-    def mark_esim_used(self, esim_id: str, used_by: str) -> bool:
-        """Đánh dấu eSIM là đã sử dụng"""
+    def mark_esim_used(self, esim_id: str, used_by: str, used_note: str = "") -> bool:
+        """Đánh dấu eSIM là đã sử dụng, kèm ghi chú (cài cho ai)."""
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             
             cursor.execute('''
                 UPDATE esim_entries 
-                SET status = 'used', used_date = ?, used_by = ?
+                SET status = 'used', used_date = ?, used_by = ?, used_note = ?
                 WHERE id = ? AND status = 'available'
-            ''', (datetime.datetime.now().isoformat(), used_by, esim_id))
+            ''', (datetime.datetime.now().isoformat(), used_by, used_note, esim_id))
             
             rows_affected = cursor.rowcount
             conn.commit()
             conn.close()
             
             if rows_affected > 0:
-                logger.info(f"Marked eSIM {esim_id} as used by {used_by}")
+                logger.info(f"Marked eSIM {esim_id} as used by {used_by} | note: {used_note or 'N/A'}")
                 return True
             else:
                 logger.warning(f"Could not mark eSIM {esim_id} as used (not available)")
