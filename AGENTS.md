@@ -2,7 +2,16 @@
 
 ## Cursor Cloud specific instructions
 
-This repo is a single-process **Telegram bot** ("eSIM Support Bot", Python 3). There is no web server, no build step, and (currently) no committed automated tests or linter config. See `README.md` for the feature overview and standard run steps.
+This repo is a single-process **Telegram bot** ("eSIM Support Bot", Python 3). There is no web server and no build step. See `README.md` for the feature overview, deploy steps, and current user-facing behavior.
+
+### Working rules for future agents
+- Read `README.md` and this `AGENTS.md` before changing code.
+- Work directly on `master` unless the user explicitly asks for a separate branch or PR.
+- After code changes, run the unit tests and compile check listed below.
+- If verification passes, commit with a clear message and push directly to `origin/master`.
+- Do not create pull requests unless the user explicitly asks.
+- Do not create new `.md` files unless the user explicitly asks. Editing existing Markdown files is OK when requested or needed to keep docs accurate.
+- SimplifyTrip / Check ICCID has been removed from the bot; do not reintroduce it unless the user explicitly requests a replacement integration.
 
 ### Services
 - **`python bot.py`** — the only service. It runs via Telegram long-polling (`run_polling`); it does not open a local port. Stop with Ctrl+C.
