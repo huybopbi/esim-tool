@@ -90,6 +90,43 @@ class ESIMStorageBulkTest(unittest.TestCase):
         self.assertEqual(entry.status, "used")
         self.assertEqual(entry.used_note, "")
 
+    def _seed_mixed(self):
+        a1 = self.storage.add_esim_from_lpa("LPA:1$rsp.esim.exchange$A1")
+        a2 = self.storage.add_esim_from_lpa("LPA:1$rsp.esim.exchange$A2")
+        u1 = self.storage.add_esim_from_lpa("LPA:1$rsp.esim.exchange$U1")
+        self.storage.mark_esim_used(u1, "1000 (@admin)", "Khách 1")
+        return a1, a2, u1
+
+    def test_get_all_esims_returns_available_and_used(self):
+        self._seed_mixed()
+        all_esims = self.storage.get_all_esims()
+        self.assertEqual(len(all_esims), 3)
+        statuses = sorted(e.status for e in all_esims)
+        self.assertEqual(statuses, ["available", "available", "used"])
+
+    def test_delete_single_esim(self):
+        a1, a2, u1 = self._seed_mixed()
+        self.assertTrue(self.storage.delete_esim(a1))
+        self.assertIsNone(self.storage.get_esim_by_id(a1))
+        self.assertEqual(self.storage.get_storage_stats()["total"], 2)
+        # Xóa lại cái không tồn tại trả về False
+        self.assertFalse(self.storage.delete_esim(a1))
+
+    def test_delete_used_esims_only(self):
+        self._seed_mixed()
+        deleted = self.storage.delete_used_esims()
+        self.assertEqual(deleted, 1)
+        stats = self.storage.get_storage_stats()
+        self.assertEqual(stats["used"], 0)
+        self.assertEqual(stats["available"], 2)
+
+    def test_delete_all_esims(self):
+        self._seed_mixed()
+        deleted = self.storage.delete_all_esims()
+        self.assertEqual(deleted, 3)
+        self.assertEqual(self.storage.get_storage_stats()["total"], 0)
+        self.assertEqual(self.storage.get_all_esims(), [])
+
 
 class ESIMStorageMigrationTest(unittest.TestCase):
     def setUp(self):

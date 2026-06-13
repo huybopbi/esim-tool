@@ -39,6 +39,8 @@ from bot_keyboards import (
     build_back_keyboard,
     build_bulk_smdp_keyboard,
     build_cancel_keyboard,
+    build_confirm_keyboard,
+    build_delete_menu_keyboard,
     build_use_note_keyboard,
     build_guide_menu_keyboard,
     build_main_menu_keyboard,
@@ -182,6 +184,22 @@ class eSIMBot:
             await self.start_use_esim(update, context)
         elif query.data == "view_used":
             await self.view_used_esims(update, context)
+        elif query.data == "delete_menu":
+            await self.show_delete_menu(update, context)
+        elif query.data == "del_list":
+            await self.show_delete_list(update, context)
+        elif query.data.startswith("confirm_del_esim_"):
+            await self.do_delete_esim(update, context)
+        elif query.data.startswith("del_esim_"):
+            await self.confirm_delete_esim(update, context)
+        elif query.data == "del_used":
+            await self.confirm_delete_used(update, context)
+        elif query.data == "confirm_del_used":
+            await self.do_delete_used(update, context)
+        elif query.data == "del_all":
+            await self.confirm_delete_all(update, context)
+        elif query.data == "confirm_del_all":
+            await self.do_delete_all(update, context)
 
     
     def get_back_keyboard(self):
@@ -2240,7 +2258,173 @@ class eSIMBot:
     def get_storage_keyboard(self):
         """Tạo keyboard quay về menu kho"""
         return build_storage_keyboard()
-    
+
+    # Xóa eSIM khỏi kho
+    async def _edit_or_reply(self, update: Update, text: str, reply_markup=None):
+        """Edit message nếu được, không thì gửi mới (dùng cho callback)."""
+        query = update.callback_query
+        try:
+            await query.edit_message_text(
+                text,
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=reply_markup
+            )
+        except Exception as e:
+            logger.warning(f"Could not edit message, sending new one: {e}")
+            await query.message.reply_text(
+                text,
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=reply_markup
+            )
+
+    async def show_delete_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Menu xóa eSIM."""
+        stats = esim_storage.get_storage_stats()
+        text = (
+            "🗑 **XÓA eSIM KHỎI KHO**\n\n"
+            f"📊 Tổng: {stats['total']} | ✅ Có sẵn: {stats['available']} | 🔴 Đã dùng: {stats['used']}\n\n"
+            "⚠️ Thao tác xóa **không thể hoàn tác**. Chọn loại xóa:"
+        )
+        await self._edit_or_reply(update, text, build_delete_menu_keyboard())
+
+    async def show_delete_list(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Danh sách eSIM để xóa từng cái."""
+        esims = esim_storage.get_all_esims()
+
+        if not esims:
+            await self._edit_or_reply(
+                update,
+                "🗑 **XÓA TỪNG eSIM**\n\n❌ Kho đang trống.",
+                build_delete_menu_keyboard()
+            )
+            return
+
+        keyboard = []
+        for esim in esims[:30]:  # Tối đa 30 eSIM
+            status_icon = "✅" if esim.status == "available" else "🔴"
+            label = f"{status_icon} {esim.id} - {esim.sm_dp_address[:22]}"
+            if esim.description:
+                label += f" ({esim.description[:12]})"
+            keyboard.append([InlineKeyboardButton(label, callback_data=f"del_esim_{esim.id}")])
+
+        keyboard.append([InlineKeyboardButton("🔙 Về Menu Xóa", callback_data="delete_menu")])
+
+        text = f"🗑 **XÓA TỪNG eSIM**\n\nChọn eSIM cần xóa (✅ có sẵn / 🔴 đã dùng):"
+        if len(esims) > 30:
+            text += f"\n\n_Hiển thị 30/{len(esims)} eSIM mới nhất._"
+
+        await self._edit_or_reply(update, text, InlineKeyboardMarkup(keyboard))
+
+    async def confirm_delete_esim(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Xác nhận xóa một eSIM cụ thể."""
+        esim_id = update.callback_query.data.replace("del_esim_", "")
+        esim = esim_storage.get_esim_by_id(esim_id)
+
+        if not esim:
+            await self._edit_or_reply(
+                update,
+                "❌ eSIM không tồn tại (có thể đã bị xóa).",
+                build_delete_menu_keyboard()
+            )
+            return
+
+        status_text = "✅ Có sẵn" if esim.status == "available" else "🔴 Đã dùng"
+        text = (
+            "🗑 **XÁC NHẬN XÓA eSIM**\n\n"
+            f"🆔 **ID:** `{esim.id}`\n"
+            f"📍 **SM-DP+:** `{esim.sm_dp_address}`\n"
+        )
+        if esim.iccid:
+            text += f"📲 **ICCID:** `{esim.iccid}`\n"
+        if esim.description:
+            text += f"🏷️ **Mô tả:** {esim.description}\n"
+        text += f"📦 **Trạng thái:** {status_text}\n\n"
+        text += "⚠️ Bạn chắc chắn muốn xóa eSIM này? Không thể hoàn tác."
+
+        await self._edit_or_reply(
+            update,
+            text,
+            build_confirm_keyboard(f"confirm_del_esim_{esim.id}", cancel_callback="del_list")
+        )
+
+    async def do_delete_esim(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Thực hiện xóa một eSIM."""
+        esim_id = update.callback_query.data.replace("confirm_del_esim_", "")
+        success = esim_storage.delete_esim(esim_id)
+
+        user = update.effective_user
+        logger.info(f"[DELETE eSIM] User: {user.username or user.id} | ID: {esim_id} | Success: {success}")
+
+        if success:
+            text = f"✅ Đã xóa eSIM `{esim_id}` khỏi kho."
+        else:
+            text = f"❌ Không xóa được eSIM `{esim_id}` (có thể đã bị xóa)."
+
+        await self._edit_or_reply(update, text, build_delete_menu_keyboard())
+
+    async def confirm_delete_used(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Xác nhận xóa toàn bộ eSIM đã dùng."""
+        stats = esim_storage.get_storage_stats()
+        if stats['used'] == 0:
+            await self._edit_or_reply(
+                update,
+                "🧹 **XÓA eSIM ĐÃ DÙNG**\n\n✅ Không có eSIM đã dùng nào để xóa.",
+                build_delete_menu_keyboard()
+            )
+            return
+
+        text = (
+            "🧹 **XÁC NHẬN XÓA eSIM ĐÃ DÙNG**\n\n"
+            f"Sẽ xóa **{stats['used']}** eSIM đã dùng (giữ lại {stats['available']} eSIM có sẵn).\n\n"
+            "⚠️ Không thể hoàn tác. Tiếp tục?"
+        )
+        await self._edit_or_reply(update, text, build_confirm_keyboard("confirm_del_used"))
+
+    async def do_delete_used(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Thực hiện xóa toàn bộ eSIM đã dùng."""
+        count = esim_storage.delete_used_esims()
+
+        user = update.effective_user
+        logger.info(f"[DELETE USED] User: {user.username or user.id} | Deleted: {count}")
+
+        await self._edit_or_reply(
+            update,
+            f"✅ Đã xóa **{count}** eSIM đã dùng khỏi kho.",
+            build_delete_menu_keyboard()
+        )
+
+    async def confirm_delete_all(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Xác nhận xóa toàn bộ kho."""
+        stats = esim_storage.get_storage_stats()
+        if stats['total'] == 0:
+            await self._edit_or_reply(
+                update,
+                "💣 **XÓA TOÀN BỘ KHO**\n\n✅ Kho đã trống.",
+                build_delete_menu_keyboard()
+            )
+            return
+
+        text = (
+            "💣 **XÁC NHẬN XÓA TOÀN BỘ KHO**\n\n"
+            f"Sẽ xóa **TẤT CẢ {stats['total']}** eSIM "
+            f"(✅ {stats['available']} có sẵn + 🔴 {stats['used']} đã dùng).\n\n"
+            "🚨 **CẢNH BÁO:** Toàn bộ dữ liệu kho sẽ bị xóa và KHÔNG THỂ HOÀN TÁC!"
+        )
+        await self._edit_or_reply(update, text, build_confirm_keyboard("confirm_del_all"))
+
+    async def do_delete_all(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Thực hiện xóa toàn bộ kho."""
+        count = esim_storage.delete_all_esims()
+
+        user = update.effective_user
+        logger.info(f"[DELETE ALL] User: {user.username or user.id} | Deleted: {count}")
+
+        await self._edit_or_reply(
+            update,
+            f"✅ Đã xóa toàn bộ kho (**{count}** eSIM).",
+            build_delete_menu_keyboard()
+        )
+
     # Device check và Support placeholders
     async def start_check_device(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Kiểm tra thiết bị hỗ trợ eSIM"""

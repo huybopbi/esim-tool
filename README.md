@@ -28,6 +28,8 @@ Kết quả trả về:
 - Sử dụng eSIM từ kho: nhập **ghi chú** (tùy chọn) rồi tự động đánh dấu đã
   dùng, lưu lại ngày giờ và ghi chú
 - Xem danh sách eSIM còn trống/đã dùng (kèm ICCID, ngày giờ và ghi chú)
+- **Xóa eSIM** (có bước xác nhận): xóa từng eSIM, xóa hết eSIM đã dùng, hoặc
+  xóa toàn bộ kho
 
 #### 📦 Thêm eSIM hàng loạt
 Trong menu Kho eSIM, bấm **"📦 Thêm hàng loạt"**:

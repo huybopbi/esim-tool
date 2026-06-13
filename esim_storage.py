@@ -389,6 +389,75 @@ class eSIMStorage:
             logger.error(f"Error deleting eSIM: {e}")
             return False
     
+    def get_all_esims(self) -> List[eSIMEntry]:
+        """Lấy toàn bộ eSIM (cả còn trống và đã dùng), mới nhất trước."""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+
+            cursor.execute('SELECT * FROM esim_entries ORDER BY added_date DESC')
+            rows = cursor.fetchall()
+            conn.close()
+
+            entries = []
+            for row in rows:
+                entry_dict = {
+                    'id': row[0],
+                    'sm_dp_address': row[1],
+                    'activation_code': row[2],
+                    'description': row[3],
+                    'added_date': row[4],
+                    'status': row[5],
+                    'used_date': row[6],
+                    'used_by': row[7],
+                    'lpa_string': row[8],
+                    'iccid': row[9] if len(row) > 9 else None,
+                    'used_note': row[10] if len(row) > 10 else None
+                }
+                entries.append(eSIMEntry.from_dict(entry_dict))
+
+            return entries
+
+        except Exception as e:
+            logger.error(f"Error getting all eSIMs: {e}")
+            return []
+
+    def delete_used_esims(self) -> int:
+        """Xóa toàn bộ eSIM đã dùng. Trả về số bản ghi đã xóa."""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+
+            cursor.execute("DELETE FROM esim_entries WHERE status = 'used'")
+            rows_affected = cursor.rowcount
+            conn.commit()
+            conn.close()
+
+            logger.info(f"Deleted {rows_affected} used eSIMs")
+            return rows_affected
+
+        except Exception as e:
+            logger.error(f"Error deleting used eSIMs: {e}")
+            return 0
+
+    def delete_all_esims(self) -> int:
+        """Xóa toàn bộ eSIM trong kho. Trả về số bản ghi đã xóa."""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+
+            cursor.execute("DELETE FROM esim_entries")
+            rows_affected = cursor.rowcount
+            conn.commit()
+            conn.close()
+
+            logger.info(f"Deleted ALL {rows_affected} eSIMs from storage")
+            return rows_affected
+
+        except Exception as e:
+            logger.error(f"Error deleting all eSIMs: {e}")
+            return 0
+
     def get_storage_stats(self) -> Dict[str, int]:
         """Lấy thống kê kho eSIM"""
         try:

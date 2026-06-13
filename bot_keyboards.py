@@ -121,9 +121,28 @@ def build_storage_menu_keyboard() -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton("🎯 Sử dụng eSIM", callback_data="use_esim"),
+            InlineKeyboardButton("🗑 Xóa eSIM", callback_data="delete_menu"),
         ],
         [
             InlineKeyboardButton("🔙 Về Menu Chính", callback_data="back_to_menu"),
+        ],
+    ])
+
+
+def build_delete_menu_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🗑 Xóa từng eSIM", callback_data="del_list")],
+        [InlineKeyboardButton("🧹 Xóa hết eSIM đã dùng", callback_data="del_used")],
+        [InlineKeyboardButton("💣 Xóa toàn bộ kho", callback_data="del_all")],
+        [InlineKeyboardButton("🔙 Về Menu Kho", callback_data="storage_menu")],
+    ])
+
+
+def build_confirm_keyboard(confirm_callback: str, cancel_callback: str = "delete_menu") -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("✅ Xác nhận xóa", callback_data=confirm_callback),
+            InlineKeyboardButton("❌ Hủy", callback_data=cancel_callback),
         ],
     ])
 
