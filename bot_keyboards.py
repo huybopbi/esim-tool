@@ -44,6 +44,51 @@ def build_guide_menu_keyboard() -> InlineKeyboardMarkup:
     ])
 
 
+def build_result_actions_keyboard(
+    is_admin: bool = False,
+    can_save: bool = False,
+) -> InlineKeyboardMarkup:
+    keyboard = [
+        [
+            InlineKeyboardButton("🔁 Tạo mã khác", callback_data="create_link_qr"),
+            InlineKeyboardButton("🔍 Check ICCID", callback_data="check_iccid"),
+        ],
+    ]
+
+    if is_admin:
+        admin_row = []
+        if can_save:
+            admin_row.append(
+                InlineKeyboardButton("➕ Lưu vào kho", callback_data="save_last_esim")
+            )
+        admin_row.append(
+            InlineKeyboardButton("🏪 Về kho eSIM", callback_data="storage_menu")
+        )
+        keyboard.append(admin_row)
+
+    keyboard.append([
+        InlineKeyboardButton("🏠 Menu chính", callback_data="back_to_menu"),
+    ])
+
+    return InlineKeyboardMarkup(keyboard)
+
+
+def build_storage_result_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("➕ Thêm eSIM khác", callback_data="add_esim"),
+            InlineKeyboardButton("📋 Xem kho", callback_data="view_available"),
+        ],
+        [
+            InlineKeyboardButton("🎯 Sử dụng eSIM", callback_data="use_esim"),
+            InlineKeyboardButton("🏪 Về Menu Kho", callback_data="storage_menu"),
+        ],
+        [
+            InlineKeyboardButton("🏠 Menu chính", callback_data="back_to_menu"),
+        ],
+    ])
+
+
 def build_storage_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🏪 Về Menu Kho", callback_data="storage_menu")],

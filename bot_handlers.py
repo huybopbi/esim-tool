@@ -52,6 +52,7 @@ def setup_bot_handlers(bot):
     add_esim_handler = ConversationHandler(
         entry_points=[
             CallbackQueryHandler(bot.start_add_esim, pattern="^add_esim$"),
+            CallbackQueryHandler(bot.start_save_last_esim, pattern="^save_last_esim$"),
         ],
         states={
             WAITING_ADD_ESIM_SM_DP: [

@@ -34,6 +34,8 @@ from bot_keyboards import (
     build_back_keyboard,
     build_guide_menu_keyboard,
     build_main_menu_keyboard,
+    build_result_actions_keyboard,
+    build_storage_result_keyboard,
     build_storage_keyboard,
     build_storage_menu_keyboard,
 )
@@ -180,6 +182,21 @@ class eSIMBot:
     def get_back_keyboard(self):
         """Tạo keyboard với nút Back"""
         return build_back_keyboard()
+
+    def get_result_actions_keyboard(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Tạo keyboard thao tác sau kết quả theo quyền người dùng."""
+        is_admin = update.effective_user.id in ADMIN_IDS
+        can_save = bool(context.user_data.get('last_lpa_string'))
+        return build_result_actions_keyboard(is_admin=is_admin, can_save=can_save)
+    
+    def remember_last_lpa(self, context: ContextTypes.DEFAULT_TYPE, lpa_string: str):
+        """Lưu LPA gần nhất để admin có thể đưa kết quả vào kho."""
+        if lpa_string:
+            context.user_data['last_lpa_string'] = lpa_string
+
+    def get_storage_result_keyboard(self):
+        """Tạo keyboard thao tác sau khi thêm/sử dụng eSIM trong kho."""
+        return build_storage_result_keyboard()
     
     async def show_main_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Hiển thị menu chính theo quyền của người dùng"""
@@ -428,6 +445,7 @@ class eSIMBot:
             
             # Create QR code
             qr_image, lpa_string = esim_tools.create_qr_from_sm_dp(sm_dp_address, activation_code)
+            self.remember_last_lpa(context, lpa_string)
             
             # Log activity
             user = update.effective_user
@@ -453,7 +471,7 @@ class eSIMBot:
                 photo=qr_image,
                 caption=response,
                 parse_mode=ParseMode.MARKDOWN,
-                reply_markup=self.get_back_keyboard()
+                reply_markup=self.get_result_actions_keyboard(update, context)
             )
             
         except Exception as e:
@@ -512,6 +530,8 @@ class eSIMBot:
         try:
             # Tạo link cài đặt
             install_link = esim_tools.create_iphone_install_link(sm_dp_address, activation_code)
+            lpa_string = f"LPA:1${sm_dp_address}${activation_code}" if activation_code else f"LPA:1${sm_dp_address}$"
+            self.remember_last_lpa(context, lpa_string)
             
             # Log activity
             logger.info(f"Created install link for user {update.effective_user.id}: {sm_dp_address}")
@@ -529,17 +549,10 @@ class eSIMBot:
             response += "💡 **Yêu cầu:** iPhone XS/XR+ với iOS 17.4+ (Universal Link)\n"
             response += "📱 **Fallback:** iOS 12.1+ có thể dùng QR code thay thế"
             
-            # Tạo keyboard với options
-            keyboard = [
-                [InlineKeyboardButton("📱 Tạo QR Code", callback_data="create_qr")],
-                [InlineKeyboardButton("🔙 Về Menu Chính", callback_data="back_to_menu")]
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            
             await update.message.reply_text(
                 response,
                 parse_mode=ParseMode.MARKDOWN,
-                reply_markup=reply_markup
+                reply_markup=self.get_result_actions_keyboard(update, context)
             )
             
         except Exception as e:
@@ -599,6 +612,7 @@ class eSIMBot:
         try:
             # Tạo QR code
             qr_image, lpa_string = esim_tools.create_qr_from_sm_dp(sm_dp_address, activation_code)
+            self.remember_last_lpa(context, lpa_string)
             
             # Log activity
             logger.info(f"Created QR code for user {update.effective_user.id}: {sm_dp_address}")
@@ -619,7 +633,7 @@ class eSIMBot:
                 photo=qr_image,
                 caption=response,
                 parse_mode=ParseMode.MARKDOWN,
-                reply_markup=self.get_back_keyboard()
+                reply_markup=self.get_result_actions_keyboard(update, context)
             )
             
         except Exception as e:
@@ -713,6 +727,12 @@ class eSIMBot:
                         analysis['sm_dp_address'], 
                         analysis['activation_code']
                     )
+                    lpa_string = (
+                        f"LPA:1${analysis['sm_dp_address']}${analysis['activation_code']}"
+                        if analysis['activation_code']
+                        else f"LPA:1${analysis['sm_dp_address']}$"
+                    )
+                    self.remember_last_lpa(context, lpa_string)
                     response += f"🔗 **Link cài đặt iPhone:**\n`{install_link}`\n\n"
                 except:
                     pass
@@ -725,7 +745,7 @@ class eSIMBot:
             await update.message.reply_text(
                 response,
                 parse_mode=ParseMode.MARKDOWN,
-                reply_markup=self.get_back_keyboard()
+                reply_markup=self.get_result_actions_keyboard(update, context)
             )
             
         except Exception as e:
@@ -808,6 +828,12 @@ class eSIMBot:
                         analysis['sm_dp_address'], 
                         analysis['activation_code']
                     )
+                    lpa_string = (
+                        f"LPA:1${analysis['sm_dp_address']}${analysis['activation_code']}"
+                        if analysis['activation_code']
+                        else f"LPA:1${analysis['sm_dp_address']}$"
+                    )
+                    self.remember_last_lpa(context, lpa_string)
                     response += f"🔗 **Link cài đặt iPhone:**\n`{install_link}`\n\n"
                 except:
                     pass
@@ -820,7 +846,7 @@ class eSIMBot:
             await update.message.reply_text(
                 response,
                 parse_mode=ParseMode.MARKDOWN,
-                reply_markup=self.get_back_keyboard()
+                reply_markup=self.get_result_actions_keyboard(update, context)
             )
             
         except Exception as e:
@@ -865,6 +891,13 @@ class eSIMBot:
             
             # Phân tích data để hiển thị thông tin
             analysis = esim_tools.extract_sm_dp_and_activation(qr_data)
+            if analysis['sm_dp_address']:
+                lpa_string = (
+                    f"LPA:1${analysis['sm_dp_address']}${analysis['activation_code']}"
+                    if analysis['activation_code']
+                    else f"LPA:1${analysis['sm_dp_address']}$"
+                )
+                self.remember_last_lpa(context, lpa_string)
             
             response = f"✅ **LINK CÀI ĐẶT ĐÃ TẠO THÀNH CÔNG**\n\n"
             
@@ -884,7 +917,7 @@ class eSIMBot:
             await update.message.reply_text(
                 response,
                 parse_mode=ParseMode.MARKDOWN,
-                reply_markup=self.get_back_keyboard()
+                reply_markup=self.get_result_actions_keyboard(update, context)
             )
             
         except Exception as e:
@@ -939,6 +972,7 @@ class eSIMBot:
             
             # Tạo QR code từ LPA string
             qr_image, _ = esim_tools.create_qr_from_lpa(lpa_string)
+            self.remember_last_lpa(context, lpa_string)
             
             # Tạo install link
             install_link = f"https://esimsetup.apple.com/esim_qrcode_provisioning?carddata={lpa_string}"
@@ -968,7 +1002,7 @@ class eSIMBot:
                 photo=qr_image,
                 caption=response,
                 parse_mode=ParseMode.MARKDOWN,
-                reply_markup=self.get_back_keyboard()
+                reply_markup=self.get_result_actions_keyboard(update, context)
             )
             
         except Exception as e:
@@ -1051,6 +1085,55 @@ class eSIMBot:
         
         context.user_data['action'] = 'add_esim_auto'
         return WAITING_ADD_ESIM_LPA
+
+    async def start_save_last_esim(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Bắt đầu lưu kết quả eSIM vừa tạo/phân tích vào kho."""
+        query = update.callback_query
+        await query.answer()
+
+        if not self._check_admin_access(update):
+            await self._unauthorized_reply(update)
+            return ConversationHandler.END
+
+        lpa_string = context.user_data.get('last_lpa_string')
+        if not lpa_string:
+            await query.message.reply_text(
+                "⚠️ **Chưa có kết quả eSIM để lưu**\n\n"
+                "Vui lòng tạo Link & QR trước, sau đó bấm **Lưu vào kho**.",
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=build_result_actions_keyboard(is_admin=True, can_save=False)
+            )
+            return ConversationHandler.END
+
+        is_valid, message = esim_tools.validate_lpa_string(lpa_string)
+        if not is_valid:
+            await query.message.reply_text(
+                f"❌ **Không thể lưu kết quả này:** {message}",
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=build_result_actions_keyboard(is_admin=True, can_save=False)
+            )
+            return ConversationHandler.END
+
+        context.user_data['lpa_string'] = lpa_string
+        analysis = esim_tools.extract_sm_dp_and_activation(lpa_string)
+
+        preview_text = "➕ **LƯU KẾT QUẢ VÀO KHO eSIM**\n\n"
+        preview_text += f"📋 **LPA:** `{lpa_string}`\n\n"
+        preview_text += "**Thông tin sẽ lưu:**\n"
+        preview_text += f"📍 **SM-DP+:** `{analysis['sm_dp_address']}`\n"
+        if analysis['activation_code']:
+            preview_text += f"🔑 **Activation Code:** `{analysis['activation_code']}`\n"
+        else:
+            preview_text += "🔑 **Activation Code:** _Không có_\n"
+        preview_text += "\n🏷️ **Nhập mô tả cho eSIM này** (tùy chọn):\n\n"
+        preview_text += "Gửi `/skip` để bỏ qua mô tả\n"
+        preview_text += "Gửi `/cancel` để hủy"
+
+        await query.message.reply_text(
+            preview_text,
+            parse_mode=ParseMode.MARKDOWN
+        )
+        return WAITING_ADD_ESIM_LPA_DESC
     
     async def handle_add_esim_auto(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Tự động nhận diện và xử lý dữ liệu eSIM"""
@@ -1203,7 +1286,7 @@ class eSIMBot:
             await update.message.reply_text(
                 response,
                 parse_mode=ParseMode.MARKDOWN,
-                reply_markup=self.get_storage_keyboard()
+                reply_markup=self.get_storage_result_keyboard()
             )
             
         except Exception as e:
@@ -1313,7 +1396,7 @@ class eSIMBot:
             await update.message.reply_text(
                 response,
                 parse_mode=ParseMode.MARKDOWN,
-                reply_markup=self.get_storage_keyboard()
+                reply_markup=self.get_storage_result_keyboard()
             )
             
         except Exception as e:
@@ -1512,7 +1595,7 @@ class eSIMBot:
             await update.message.reply_text(
                 response,
                 parse_mode=ParseMode.MARKDOWN,
-                reply_markup=self.get_storage_keyboard()
+                reply_markup=self.get_storage_result_keyboard()
             )
             
         except Exception as e:
@@ -1729,7 +1812,7 @@ class eSIMBot:
                 photo=qr_image,
                 caption=response,
                 parse_mode=ParseMode.MARKDOWN,
-                reply_markup=self.get_storage_keyboard()
+                reply_markup=self.get_storage_result_keyboard()
             )
             
             # Xóa message cũ
@@ -1970,11 +2053,10 @@ Gửi /cancel để hủy thao tác hiện tại
         # Gọi API
         result = simplifytrip_api.check_iccid(iccid)
         
-        keyboard = [
-            [InlineKeyboardButton("🔍 Check ICCID khác", callback_data="check_iccid")],
-            [InlineKeyboardButton("🔙 Về Menu Chính", callback_data="back_to_menu")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
+        reply_markup = build_result_actions_keyboard(
+            is_admin=user.id in ADMIN_IDS,
+            can_save=False
+        )
         
         if result['success']:
             # Format và gửi thông tin
