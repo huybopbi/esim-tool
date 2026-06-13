@@ -1,0 +1,76 @@
+import unittest
+
+from esim_tools import eSIMTools
+
+
+class ESIMToolsTest(unittest.TestCase):
+    def setUp(self):
+        self.tools = eSIMTools()
+
+    def test_create_iphone_install_link_with_activation_code(self):
+        link = self.tools.create_iphone_install_link("rsp.truphone.com", "CODE123")
+
+        self.assertEqual(
+            link,
+            "https://esimsetup.apple.com/esim_qrcode_provisioning?"
+            "carddata=LPA:1$rsp.truphone.com$CODE123",
+        )
+
+    def test_create_iphone_install_link_without_activation_code(self):
+        link = self.tools.create_iphone_install_link("rsp.truphone.com")
+
+        self.assertEqual(
+            link,
+            "https://esimsetup.apple.com/esim_qrcode_provisioning?"
+            "carddata=LPA:1$rsp.truphone.com$",
+        )
+
+    def test_create_qr_from_sm_dp_returns_png_and_lpa(self):
+        qr_image, lpa_string = self.tools.create_qr_from_sm_dp(
+            "rsp.truphone.com",
+            "CODE123",
+        )
+
+        self.assertEqual(lpa_string, "LPA:1$rsp.truphone.com$CODE123")
+        self.assertTrue(qr_image.getvalue().startswith(b"\x89PNG\r\n\x1a\n"))
+
+    def test_extract_sm_dp_and_activation_from_lpa(self):
+        result = self.tools.extract_sm_dp_and_activation(
+            "LPA:1$rsp.truphone.com$CODE123"
+        )
+
+        self.assertEqual(result["format_type"], "LPA")
+        self.assertEqual(result["sm_dp_address"], "rsp.truphone.com")
+        self.assertEqual(result["activation_code"], "CODE123")
+
+    def test_extract_sm_dp_and_activation_from_iphone_url(self):
+        result = self.tools.extract_sm_dp_and_activation(
+            "https://esimsetup.apple.com/esim_qrcode_provisioning?"
+            "carddata=LPA%3A1%24rsp.truphone.com%24CODE123"
+        )
+
+        self.assertEqual(result["format_type"], "LPA")
+        self.assertEqual(result["sm_dp_address"], "rsp.truphone.com")
+        self.assertEqual(result["activation_code"], "CODE123")
+
+    def test_validate_sm_dp_address_rejects_invalid_domain(self):
+        is_valid, message = self.tools.validate_sm_dp_address("not-a-domain")
+
+        self.assertFalse(is_valid)
+        self.assertIn("domain", message)
+
+    def test_validate_lpa_string_rejects_invalid_format(self):
+        is_valid, message = self.tools.validate_lpa_string("rsp.truphone.com")
+
+        self.assertFalse(is_valid)
+        self.assertIn("LPA", message)
+
+    def test_create_qr_from_lpa_rejects_invalid_lpa(self):
+        with self.assertRaises(Exception) as ctx:
+            self.tools.create_qr_from_lpa("rsp.truphone.com")
+
+        self.assertIn("LPA string", str(ctx.exception))
+
+
+if __name__ == "__main__":
+    unittest.main()

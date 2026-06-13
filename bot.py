@@ -1,5 +1,4 @@
 import logging
-import asyncio
 import warnings
 
 # Suppress các warnings không cần thiết
@@ -8,11 +7,35 @@ warnings.filterwarnings("ignore", message=".*pkg_resources.*", category=UserWarn
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
-from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ConversationHandler, filters, ContextTypes
+from telegram.ext import Application, ConversationHandler, ContextTypes
 from telegram.constants import ParseMode
-import os
-from io import BytesIO
 
+from bot_constants import (
+    PUBLIC_CALLBACKS,
+    WAITING_ACTIVATION_CODE_LINK,
+    WAITING_ACTIVATION_CODE_QR,
+    WAITING_ADD_ESIM_CODE,
+    WAITING_ADD_ESIM_DESC,
+    WAITING_ADD_ESIM_LPA,
+    WAITING_ADD_ESIM_LPA_DESC,
+    WAITING_ADD_ESIM_SM_DP,
+    WAITING_ADD_ESIM_URL,
+    WAITING_ADD_ESIM_URL_DESC,
+    WAITING_ESIM_SELECTION,
+    WAITING_ICCID,
+    WAITING_LPA_STRING,
+    WAITING_QR_DATA,
+    WAITING_QR_IMAGE,
+    WAITING_SM_DP_LINK,
+    WAITING_SM_DP_QR,
+)
+from bot_handlers import setup_bot_handlers
+from bot_keyboards import (
+    build_back_keyboard,
+    build_main_menu_keyboard,
+    build_storage_keyboard,
+    build_storage_menu_keyboard,
+)
 from config import BOT_TOKEN, MESSAGES, ADMIN_IDS
 from esim_tools import esim_tools
 from esim_storage import esim_storage
@@ -30,9 +53,6 @@ logging.getLogger('telegram.ext.Updater').setLevel(logging.WARNING)
 logging.getLogger('telegram.ext.Application').setLevel(logging.WARNING)
 
 logger = logging.getLogger(__name__)
-
-# States cho conversation handlers
-WAITING_SM_DP_LINK, WAITING_ACTIVATION_CODE_LINK, WAITING_SM_DP_QR, WAITING_ACTIVATION_CODE_QR, WAITING_QR_DATA, WAITING_QR_IMAGE, WAITING_LPA_STRING, WAITING_ADD_ESIM_SM_DP, WAITING_ADD_ESIM_CODE, WAITING_ADD_ESIM_DESC, WAITING_ESIM_SELECTION, WAITING_ADD_ESIM_LPA, WAITING_ADD_ESIM_LPA_DESC, WAITING_ADD_ESIM_URL, WAITING_ADD_ESIM_URL_DESC, WAITING_ICCID = range(16)
 
 class eSIMBot:
     def __init__(self):
@@ -75,8 +95,7 @@ class eSIMBot:
         query = update.callback_query
         
         # Các callback mọi người đều dùng được - không chặn
-        public_callbacks = ["check_iccid", "create_link_qr", "back_to_menu"]
-        if query and query.data in public_callbacks:
+        if query and query.data in PUBLIC_CALLBACKS:
             return  # Không chặn, để handler khác xử lý
         
         # Chặn non-admin cho các chức năng khác
@@ -90,17 +109,7 @@ class eSIMBot:
         is_admin = user.id in ADMIN_IDS
         logger.info(f"[START] User: {user.username or user.id} | Admin: {is_admin}")
         
-        # Hiển thị menu đầy đủ cho tất cả mọi người
-        keyboard = [
-            [
-                InlineKeyboardButton("🔗 Tạo Link & QR", callback_data="create_link_qr"),
-                InlineKeyboardButton("🏪 Kho eSIM", callback_data="storage_menu")
-            ],
-            [
-                InlineKeyboardButton("🔍 Check ICCID", callback_data="check_iccid")
-            ]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
+        reply_markup = build_main_menu_keyboard()
         
         await update.message.reply_text(
             MESSAGES['welcome'],
@@ -180,23 +189,11 @@ class eSIMBot:
     
     def get_back_keyboard(self):
         """Tạo keyboard với nút Back"""
-        return InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔙 Về Menu Chính", callback_data="back_to_menu")]
-        ])
+        return build_back_keyboard()
     
     async def show_main_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Hiển thị menu chính - đầy đủ cho tất cả mọi người"""
-        # Hiển thị menu đầy đủ cho tất cả
-        keyboard = [
-            [
-                InlineKeyboardButton("🔗 Tạo Link & QR", callback_data="create_link_qr"),
-                InlineKeyboardButton("🏪 Kho eSIM", callback_data="storage_menu")
-            ],
-            [
-                InlineKeyboardButton("🔍 Check ICCID", callback_data="check_iccid")
-            ]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
+        reply_markup = build_main_menu_keyboard()
         
         query = update.callback_query
         
@@ -950,20 +947,7 @@ class eSIMBot:
         menu_text += f"• 🔴 Đã dùng: {stats['used']} eSIM\n\n"
         menu_text += f"**Chọn thao tác:**"
         
-        keyboard = [
-            [
-                InlineKeyboardButton("➕ Thêm eSIM", callback_data="add_esim"),
-                InlineKeyboardButton("📋 Xem Kho", callback_data="view_available")
-            ],
-            [
-                InlineKeyboardButton("🎯 Sử dụng eSIM", callback_data="use_esim"),
-                InlineKeyboardButton("📊 eSIM Đã dùng", callback_data="view_used")
-            ],
-            [
-                InlineKeyboardButton("🔙 Về Menu Chính", callback_data="back_to_menu")
-            ]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
+        reply_markup = build_storage_menu_keyboard()
         
         try:
             await query.edit_message_text(
@@ -1787,10 +1771,7 @@ class eSIMBot:
     
     def get_storage_keyboard(self):
         """Tạo keyboard quay về menu kho"""
-        return InlineKeyboardMarkup([
-            [InlineKeyboardButton("🏪 Về Menu Kho", callback_data="storage_menu")],
-            [InlineKeyboardButton("🔙 Về Menu Chính", callback_data="back_to_menu")]
-        ])
+        return build_storage_keyboard()
     
     # Device check và Support placeholders
     async def start_check_device(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1917,10 +1898,7 @@ Gửi /cancel để hủy thao tác hiện tại
         """Bắt đầu flow check ICCID"""
         query = update.callback_query
         
-        keyboard = [
-            [InlineKeyboardButton("🔙 Về Menu Chính", callback_data="back_to_menu")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
+        reply_markup = build_back_keyboard()
         
         await query.edit_message_text(
             "🔍 **CHECK THÔNG TIN eSIM**\n\n"
@@ -1981,91 +1959,7 @@ Gửi /cancel để hủy thao tác hiện tại
     
     def setup_handlers(self):
         """Thiết lập các handlers cho bot"""
-        # Access control filters
-        admin_filter = filters.User(user_id=ADMIN_IDS)
-        non_admin_filter = ~filters.User(user_id=ADMIN_IDS)
-
-        # Log admin IDs để debug
-
-        # Command handlers
-        # /start - mọi người đều dùng được
-        self.application.add_handler(CommandHandler("start", self.start))
-        # /help - chỉ admin
-        self.application.add_handler(CommandHandler("help", self.help_command, filters=admin_filter))
-        
-        # Debug command để kiểm tra user ID (không cần filter admin)
-        self.application.add_handler(CommandHandler("myid", self.get_user_id))
-        
-        # Conversation handler cho tạo link & QR (unified) - mọi người đều dùng được
-        create_link_qr_handler = ConversationHandler(
-            entry_points=[CallbackQueryHandler(self.start_create_link_qr, pattern="^create_link_qr$")],
-            states={
-                WAITING_SM_DP_LINK: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_create_link_qr_auto)]
-            },
-            fallbacks=[CommandHandler("cancel", self.cancel)],
-            per_message=False,
-            per_chat=True,
-            per_user=True
-        )
-        
-        # Conversation handler cho thêm eSIM vào kho
-        add_esim_handler = ConversationHandler(
-            entry_points=[
-                CallbackQueryHandler(self.start_add_esim, pattern="^add_esim$")
-            ],
-            states={
-                WAITING_ADD_ESIM_SM_DP: [MessageHandler(filters.TEXT & ~filters.COMMAND & admin_filter, self.handle_add_esim_sm_dp)],
-                WAITING_ADD_ESIM_CODE: [MessageHandler(filters.TEXT & ~filters.COMMAND & admin_filter, self.handle_add_esim_code)],
-                WAITING_ADD_ESIM_DESC: [MessageHandler(filters.TEXT & ~filters.COMMAND & admin_filter, self.handle_add_esim_desc)],
-                WAITING_ADD_ESIM_LPA: [MessageHandler(filters.TEXT & ~filters.COMMAND & admin_filter, self.handle_add_esim_auto)],
-                WAITING_ADD_ESIM_LPA_DESC: [MessageHandler(filters.TEXT & ~filters.COMMAND & admin_filter, self.handle_add_esim_lpa_desc)],
-                WAITING_ADD_ESIM_URL: [MessageHandler(filters.TEXT & ~filters.COMMAND & admin_filter, self.handle_add_esim_url)],
-                WAITING_ADD_ESIM_URL_DESC: [MessageHandler(filters.TEXT & ~filters.COMMAND & admin_filter, self.handle_add_esim_url_desc)]
-            },
-            fallbacks=[CommandHandler("cancel", self.cancel)],
-            per_message=False,
-            per_chat=True,
-            per_user=True
-        )
-        
-        # Conversation handler cho sử dụng eSIM từ kho
-        use_esim_handler = ConversationHandler(
-            entry_points=[CallbackQueryHandler(self.start_use_esim, pattern="^use_esim$")],
-            states={
-                WAITING_ESIM_SELECTION: [CallbackQueryHandler(self.handle_esim_selection, pattern="^select_esim_")]
-            },
-            fallbacks=[CommandHandler("cancel", self.cancel)],
-            per_message=False,
-            per_chat=True,
-            per_user=True
-        )
-        
-        # Conversation handler cho check ICCID - mọi người đều dùng được
-        check_iccid_handler = ConversationHandler(
-            entry_points=[CallbackQueryHandler(self.start_check_iccid, pattern="^check_iccid$")],
-            states={
-                WAITING_ICCID: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_iccid_input)]
-            },
-            fallbacks=[CommandHandler("cancel", self.cancel)],
-            per_message=False,
-            per_chat=True,
-            per_user=True
-        )
-        
-        # Thêm các conversation handlers
-        self.application.add_handler(create_link_qr_handler, group=1)
-        self.application.add_handler(add_esim_handler, group=1)
-        self.application.add_handler(use_esim_handler, group=1)
-        self.application.add_handler(check_iccid_handler, group=1)
-        
-        # Button callback handler
-        self.application.add_handler(CallbackQueryHandler(self.button_handler), group=1)
-        
-        # Catch all unauthorized callbacks (phải đặt ở group thấp hơn)
-        self.application.add_handler(CallbackQueryHandler(self.unauthorized_callback), group=2)
-        
-        # Debug message handler (thêm cuối cùng để catch tất cả)
-        self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & admin_filter, self.debug_message_handler), group=3)
+        setup_bot_handlers(self)
     
     async def set_bot_commands(self):
         """Thiết lập menu commands cho bot"""
