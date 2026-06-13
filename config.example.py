@@ -29,10 +29,15 @@ SIMPLIFYTRIP_PROXY = ""  # Ví dụ: "http://proxy.example.com:8080"
 MESSAGES = {
     'welcome': """🤖 **CHÀO MỪNG ĐẾN BOT eSIM SUPPORT**
 
-🔧 **Các công cụ hỗ trợ:**
-• 🔗 Tạo link cài eSIM cho iPhone
-• 📱 Tạo QR code cho iPhone & Android  
-• 🔍 Check thông tin eSIM từ ICCID
+📱 **Công cụ eSIM**
+• Tạo link cài eSIM cho iPhone
+• Tạo QR code cho iPhone & Android
+• Check thông tin eSIM từ ICCID
+
+❓ **Hướng dẫn**
+• Cài eSIM trên iPhone/Android
+• Kiểm tra thiết bị hỗ trợ
+• Gợi ý xử lý lỗi thường gặp
 
 📱 Chọn chức năng bên dưới để bắt đầu!""",
 

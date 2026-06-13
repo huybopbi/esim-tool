@@ -1,5 +1,4 @@
 import logging
-import asyncio
 import warnings
 
 # Suppress các warnings không cần thiết
@@ -8,11 +7,39 @@ warnings.filterwarnings("ignore", message=".*pkg_resources.*", category=UserWarn
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
-from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ConversationHandler, filters, ContextTypes
+from telegram.ext import Application, ConversationHandler, ContextTypes
 from telegram.constants import ParseMode
-import os
-from io import BytesIO
 
+from bot_constants import (
+    PUBLIC_CALLBACKS,
+    WAITING_ACTIVATION_CODE_LINK,
+    WAITING_ACTIVATION_CODE_QR,
+    WAITING_ADD_ESIM_CODE,
+    WAITING_ADD_ESIM_DESC,
+    WAITING_ADD_ESIM_LPA,
+    WAITING_ADD_ESIM_LPA_DESC,
+    WAITING_ADD_ESIM_SM_DP,
+    WAITING_ADD_ESIM_URL,
+    WAITING_ADD_ESIM_URL_DESC,
+    WAITING_ESIM_SELECTION,
+    WAITING_ICCID,
+    WAITING_LPA_STRING,
+    WAITING_QR_DATA,
+    WAITING_QR_IMAGE,
+    WAITING_SM_DP_LINK,
+    WAITING_SM_DP_QR,
+)
+from bot_handlers import setup_bot_handlers
+from bot_keyboards import (
+    build_back_keyboard,
+    build_guide_menu_keyboard,
+    build_main_menu_keyboard,
+    build_result_actions_keyboard,
+    build_storage_result_keyboard,
+    build_storage_keyboard,
+    build_storage_menu_keyboard,
+)
+from bot_user_info import format_user_id_response
 from config import BOT_TOKEN, MESSAGES, ADMIN_IDS
 from esim_tools import esim_tools
 from esim_storage import esim_storage
@@ -30,9 +57,6 @@ logging.getLogger('telegram.ext.Updater').setLevel(logging.WARNING)
 logging.getLogger('telegram.ext.Application').setLevel(logging.WARNING)
 
 logger = logging.getLogger(__name__)
-
-# States cho conversation handlers
-WAITING_SM_DP_LINK, WAITING_ACTIVATION_CODE_LINK, WAITING_SM_DP_QR, WAITING_ACTIVATION_CODE_QR, WAITING_QR_DATA, WAITING_QR_IMAGE, WAITING_LPA_STRING, WAITING_ADD_ESIM_SM_DP, WAITING_ADD_ESIM_CODE, WAITING_ADD_ESIM_DESC, WAITING_ESIM_SELECTION, WAITING_ADD_ESIM_LPA, WAITING_ADD_ESIM_LPA_DESC, WAITING_ADD_ESIM_URL, WAITING_ADD_ESIM_URL_DESC, WAITING_ICCID = range(16)
 
 class eSIMBot:
     def __init__(self):
@@ -75,8 +99,7 @@ class eSIMBot:
         query = update.callback_query
         
         # Các callback mọi người đều dùng được - không chặn
-        public_callbacks = ["check_iccid", "create_link_qr", "back_to_menu"]
-        if query and query.data in public_callbacks:
+        if query and query.data in PUBLIC_CALLBACKS:
             return  # Không chặn, để handler khác xử lý
         
         # Chặn non-admin cho các chức năng khác
@@ -90,17 +113,7 @@ class eSIMBot:
         is_admin = user.id in ADMIN_IDS
         logger.info(f"[START] User: {user.username or user.id} | Admin: {is_admin}")
         
-        # Hiển thị menu đầy đủ cho tất cả mọi người
-        keyboard = [
-            [
-                InlineKeyboardButton("🔗 Tạo Link & QR", callback_data="create_link_qr"),
-                InlineKeyboardButton("🏪 Kho eSIM", callback_data="storage_menu")
-            ],
-            [
-                InlineKeyboardButton("🔍 Check ICCID", callback_data="check_iccid")
-            ]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
+        reply_markup = build_main_menu_keyboard(is_admin=is_admin)
         
         await update.message.reply_text(
             MESSAGES['welcome'],
@@ -128,6 +141,26 @@ class eSIMBot:
         if query.data == "back_to_menu":
             await self.show_main_menu(update, context)
             return
+
+        if query.data == "guide_menu":
+            await self.show_guide_menu(update, context)
+            return
+
+        if query.data == "iphone_guide":
+            await self.show_iphone_guide(update, context)
+            return
+
+        if query.data == "android_guide":
+            await self.show_android_guide(update, context)
+            return
+
+        if query.data == "check_device":
+            await self.start_check_device(update, context)
+            return
+
+        if query.data == "support":
+            await self.start_support(update, context)
+            return
         
         # Các chức năng khác (Kho eSIM) - chỉ admin mới dùng được
         if not is_admin:
@@ -136,38 +169,6 @@ class eSIMBot:
         
         if query.data == "storage_menu":
             await self.show_storage_menu(update, context)
-        elif query.data == "check_device":
-            await self.start_check_device(update, context)
-        elif query.data == "support":
-            await self.start_support(update, context)
-        elif query.data == "iphone_guide":
-            try:
-                await query.edit_message_text(
-                    MESSAGES['iphone_guide'],
-                    parse_mode=ParseMode.MARKDOWN,
-                    reply_markup=self.get_back_keyboard()
-                )
-            except Exception as e:
-                logger.warning(f"Could not edit message: {e}")
-                await query.message.reply_text(
-                    MESSAGES['iphone_guide'],
-                    parse_mode=ParseMode.MARKDOWN,
-                    reply_markup=self.get_back_keyboard()
-                )
-        elif query.data == "android_guide":
-            try:
-                await query.edit_message_text(
-                    MESSAGES['android_guide'],
-                    parse_mode=ParseMode.MARKDOWN,
-                    reply_markup=self.get_back_keyboard()
-                )
-            except Exception as e:
-                logger.warning(f"Could not edit message: {e}")
-                await query.message.reply_text(
-                    MESSAGES['android_guide'],
-                    parse_mode=ParseMode.MARKDOWN,
-                    reply_markup=self.get_back_keyboard()
-                )
         elif query.data == "add_esim":
             await self.start_add_esim(update, context)
         elif query.data == "view_available":
@@ -180,23 +181,27 @@ class eSIMBot:
     
     def get_back_keyboard(self):
         """Tạo keyboard với nút Back"""
-        return InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔙 Về Menu Chính", callback_data="back_to_menu")]
-        ])
+        return build_back_keyboard()
+
+    def get_result_actions_keyboard(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Tạo keyboard thao tác sau kết quả theo quyền người dùng."""
+        is_admin = update.effective_user.id in ADMIN_IDS
+        can_save = bool(context.user_data.get('last_lpa_string'))
+        return build_result_actions_keyboard(is_admin=is_admin, can_save=can_save)
+    
+    def remember_last_lpa(self, context: ContextTypes.DEFAULT_TYPE, lpa_string: str):
+        """Lưu LPA gần nhất để admin có thể đưa kết quả vào kho."""
+        if lpa_string:
+            context.user_data['last_lpa_string'] = lpa_string
+
+    def get_storage_result_keyboard(self):
+        """Tạo keyboard thao tác sau khi thêm/sử dụng eSIM trong kho."""
+        return build_storage_result_keyboard()
     
     async def show_main_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Hiển thị menu chính - đầy đủ cho tất cả mọi người"""
-        # Hiển thị menu đầy đủ cho tất cả
-        keyboard = [
-            [
-                InlineKeyboardButton("🔗 Tạo Link & QR", callback_data="create_link_qr"),
-                InlineKeyboardButton("🏪 Kho eSIM", callback_data="storage_menu")
-            ],
-            [
-                InlineKeyboardButton("🔍 Check ICCID", callback_data="check_iccid")
-            ]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
+        """Hiển thị menu chính theo quyền của người dùng"""
+        is_admin = update.effective_user.id in ADMIN_IDS
+        reply_markup = build_main_menu_keyboard(is_admin=is_admin)
         
         query = update.callback_query
         
@@ -214,6 +219,67 @@ class eSIMBot:
                 MESSAGES['welcome'],
                 reply_markup=reply_markup,
                 parse_mode=ParseMode.MARKDOWN
+            )
+
+    async def show_guide_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Hiển thị trung tâm hướng dẫn cho người dùng."""
+        query = update.callback_query
+        guide_text = (
+            "❓ **TRUNG TÂM HƯỚNG DẪN eSIM**\n\n"
+            "Chọn nội dung bạn cần hỗ trợ:\n\n"
+            "📱 **iPhone:** Cách cài eSIM bằng link hoặc QR\n"
+            "🤖 **Android:** Cách thêm eSIM trên thiết bị Android\n"
+            "✅ **Thiết bị hỗ trợ:** Kiểm tra nhanh dòng máy phổ biến\n"
+            "🆘 **Lỗi thường gặp:** Gợi ý xử lý khi kích hoạt lỗi"
+        )
+        reply_markup = build_guide_menu_keyboard()
+
+        try:
+            await query.edit_message_text(
+                guide_text,
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=reply_markup
+            )
+        except Exception as e:
+            logger.warning(f"Could not edit message, sending new one: {e}")
+            await query.message.reply_text(
+                guide_text,
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=reply_markup
+            )
+
+    async def show_iphone_guide(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Hiển thị hướng dẫn cài eSIM cho iPhone."""
+        query = update.callback_query
+        try:
+            await query.edit_message_text(
+                MESSAGES['iphone_guide'],
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=build_guide_menu_keyboard()
+            )
+        except Exception as e:
+            logger.warning(f"Could not edit message: {e}")
+            await query.message.reply_text(
+                MESSAGES['iphone_guide'],
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=build_guide_menu_keyboard()
+            )
+
+    async def show_android_guide(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Hiển thị hướng dẫn cài eSIM cho Android."""
+        query = update.callback_query
+        try:
+            await query.edit_message_text(
+                MESSAGES['android_guide'],
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=build_guide_menu_keyboard()
+            )
+        except Exception as e:
+            logger.warning(f"Could not edit message: {e}")
+            await query.message.reply_text(
+                MESSAGES['android_guide'],
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=build_guide_menu_keyboard()
             )
     
     # Tool 1: Tạo link cài eSIM cho iPhone
@@ -379,6 +445,7 @@ class eSIMBot:
             
             # Create QR code
             qr_image, lpa_string = esim_tools.create_qr_from_sm_dp(sm_dp_address, activation_code)
+            self.remember_last_lpa(context, lpa_string)
             
             # Log activity
             user = update.effective_user
@@ -404,7 +471,7 @@ class eSIMBot:
                 photo=qr_image,
                 caption=response,
                 parse_mode=ParseMode.MARKDOWN,
-                reply_markup=self.get_back_keyboard()
+                reply_markup=self.get_result_actions_keyboard(update, context)
             )
             
         except Exception as e:
@@ -463,6 +530,8 @@ class eSIMBot:
         try:
             # Tạo link cài đặt
             install_link = esim_tools.create_iphone_install_link(sm_dp_address, activation_code)
+            lpa_string = f"LPA:1${sm_dp_address}${activation_code}" if activation_code else f"LPA:1${sm_dp_address}$"
+            self.remember_last_lpa(context, lpa_string)
             
             # Log activity
             logger.info(f"Created install link for user {update.effective_user.id}: {sm_dp_address}")
@@ -480,17 +549,10 @@ class eSIMBot:
             response += "💡 **Yêu cầu:** iPhone XS/XR+ với iOS 17.4+ (Universal Link)\n"
             response += "📱 **Fallback:** iOS 12.1+ có thể dùng QR code thay thế"
             
-            # Tạo keyboard với options
-            keyboard = [
-                [InlineKeyboardButton("📱 Tạo QR Code", callback_data="create_qr")],
-                [InlineKeyboardButton("🔙 Về Menu Chính", callback_data="back_to_menu")]
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            
             await update.message.reply_text(
                 response,
                 parse_mode=ParseMode.MARKDOWN,
-                reply_markup=reply_markup
+                reply_markup=self.get_result_actions_keyboard(update, context)
             )
             
         except Exception as e:
@@ -550,6 +612,7 @@ class eSIMBot:
         try:
             # Tạo QR code
             qr_image, lpa_string = esim_tools.create_qr_from_sm_dp(sm_dp_address, activation_code)
+            self.remember_last_lpa(context, lpa_string)
             
             # Log activity
             logger.info(f"Created QR code for user {update.effective_user.id}: {sm_dp_address}")
@@ -570,7 +633,7 @@ class eSIMBot:
                 photo=qr_image,
                 caption=response,
                 parse_mode=ParseMode.MARKDOWN,
-                reply_markup=self.get_back_keyboard()
+                reply_markup=self.get_result_actions_keyboard(update, context)
             )
             
         except Exception as e:
@@ -664,6 +727,12 @@ class eSIMBot:
                         analysis['sm_dp_address'], 
                         analysis['activation_code']
                     )
+                    lpa_string = (
+                        f"LPA:1${analysis['sm_dp_address']}${analysis['activation_code']}"
+                        if analysis['activation_code']
+                        else f"LPA:1${analysis['sm_dp_address']}$"
+                    )
+                    self.remember_last_lpa(context, lpa_string)
                     response += f"🔗 **Link cài đặt iPhone:**\n`{install_link}`\n\n"
                 except:
                     pass
@@ -676,7 +745,7 @@ class eSIMBot:
             await update.message.reply_text(
                 response,
                 parse_mode=ParseMode.MARKDOWN,
-                reply_markup=self.get_back_keyboard()
+                reply_markup=self.get_result_actions_keyboard(update, context)
             )
             
         except Exception as e:
@@ -759,6 +828,12 @@ class eSIMBot:
                         analysis['sm_dp_address'], 
                         analysis['activation_code']
                     )
+                    lpa_string = (
+                        f"LPA:1${analysis['sm_dp_address']}${analysis['activation_code']}"
+                        if analysis['activation_code']
+                        else f"LPA:1${analysis['sm_dp_address']}$"
+                    )
+                    self.remember_last_lpa(context, lpa_string)
                     response += f"🔗 **Link cài đặt iPhone:**\n`{install_link}`\n\n"
                 except:
                     pass
@@ -771,7 +846,7 @@ class eSIMBot:
             await update.message.reply_text(
                 response,
                 parse_mode=ParseMode.MARKDOWN,
-                reply_markup=self.get_back_keyboard()
+                reply_markup=self.get_result_actions_keyboard(update, context)
             )
             
         except Exception as e:
@@ -816,6 +891,13 @@ class eSIMBot:
             
             # Phân tích data để hiển thị thông tin
             analysis = esim_tools.extract_sm_dp_and_activation(qr_data)
+            if analysis['sm_dp_address']:
+                lpa_string = (
+                    f"LPA:1${analysis['sm_dp_address']}${analysis['activation_code']}"
+                    if analysis['activation_code']
+                    else f"LPA:1${analysis['sm_dp_address']}$"
+                )
+                self.remember_last_lpa(context, lpa_string)
             
             response = f"✅ **LINK CÀI ĐẶT ĐÃ TẠO THÀNH CÔNG**\n\n"
             
@@ -835,7 +917,7 @@ class eSIMBot:
             await update.message.reply_text(
                 response,
                 parse_mode=ParseMode.MARKDOWN,
-                reply_markup=self.get_back_keyboard()
+                reply_markup=self.get_result_actions_keyboard(update, context)
             )
             
         except Exception as e:
@@ -890,6 +972,7 @@ class eSIMBot:
             
             # Tạo QR code từ LPA string
             qr_image, _ = esim_tools.create_qr_from_lpa(lpa_string)
+            self.remember_last_lpa(context, lpa_string)
             
             # Tạo install link
             install_link = f"https://esimsetup.apple.com/esim_qrcode_provisioning?carddata={lpa_string}"
@@ -919,7 +1002,7 @@ class eSIMBot:
                 photo=qr_image,
                 caption=response,
                 parse_mode=ParseMode.MARKDOWN,
-                reply_markup=self.get_back_keyboard()
+                reply_markup=self.get_result_actions_keyboard(update, context)
             )
             
         except Exception as e:
@@ -950,20 +1033,7 @@ class eSIMBot:
         menu_text += f"• 🔴 Đã dùng: {stats['used']} eSIM\n\n"
         menu_text += f"**Chọn thao tác:**"
         
-        keyboard = [
-            [
-                InlineKeyboardButton("➕ Thêm eSIM", callback_data="add_esim"),
-                InlineKeyboardButton("📋 Xem Kho", callback_data="view_available")
-            ],
-            [
-                InlineKeyboardButton("🎯 Sử dụng eSIM", callback_data="use_esim"),
-                InlineKeyboardButton("📊 eSIM Đã dùng", callback_data="view_used")
-            ],
-            [
-                InlineKeyboardButton("🔙 Về Menu Chính", callback_data="back_to_menu")
-            ]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
+        reply_markup = build_storage_menu_keyboard()
         
         try:
             await query.edit_message_text(
@@ -1015,6 +1085,55 @@ class eSIMBot:
         
         context.user_data['action'] = 'add_esim_auto'
         return WAITING_ADD_ESIM_LPA
+
+    async def start_save_last_esim(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Bắt đầu lưu kết quả eSIM vừa tạo/phân tích vào kho."""
+        query = update.callback_query
+        await query.answer()
+
+        if not self._check_admin_access(update):
+            await self._unauthorized_reply(update)
+            return ConversationHandler.END
+
+        lpa_string = context.user_data.get('last_lpa_string')
+        if not lpa_string:
+            await query.message.reply_text(
+                "⚠️ **Chưa có kết quả eSIM để lưu**\n\n"
+                "Vui lòng tạo Link & QR trước, sau đó bấm **Lưu vào kho**.",
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=build_result_actions_keyboard(is_admin=True, can_save=False)
+            )
+            return ConversationHandler.END
+
+        is_valid, message = esim_tools.validate_lpa_string(lpa_string)
+        if not is_valid:
+            await query.message.reply_text(
+                f"❌ **Không thể lưu kết quả này:** {message}",
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=build_result_actions_keyboard(is_admin=True, can_save=False)
+            )
+            return ConversationHandler.END
+
+        context.user_data['lpa_string'] = lpa_string
+        analysis = esim_tools.extract_sm_dp_and_activation(lpa_string)
+
+        preview_text = "➕ **LƯU KẾT QUẢ VÀO KHO eSIM**\n\n"
+        preview_text += f"📋 **LPA:** `{lpa_string}`\n\n"
+        preview_text += "**Thông tin sẽ lưu:**\n"
+        preview_text += f"📍 **SM-DP+:** `{analysis['sm_dp_address']}`\n"
+        if analysis['activation_code']:
+            preview_text += f"🔑 **Activation Code:** `{analysis['activation_code']}`\n"
+        else:
+            preview_text += "🔑 **Activation Code:** _Không có_\n"
+        preview_text += "\n🏷️ **Nhập mô tả cho eSIM này** (tùy chọn):\n\n"
+        preview_text += "Gửi `/skip` để bỏ qua mô tả\n"
+        preview_text += "Gửi `/cancel` để hủy"
+
+        await query.message.reply_text(
+            preview_text,
+            parse_mode=ParseMode.MARKDOWN
+        )
+        return WAITING_ADD_ESIM_LPA_DESC
     
     async def handle_add_esim_auto(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Tự động nhận diện và xử lý dữ liệu eSIM"""
@@ -1167,7 +1286,7 @@ class eSIMBot:
             await update.message.reply_text(
                 response,
                 parse_mode=ParseMode.MARKDOWN,
-                reply_markup=self.get_storage_keyboard()
+                reply_markup=self.get_storage_result_keyboard()
             )
             
         except Exception as e:
@@ -1277,7 +1396,7 @@ class eSIMBot:
             await update.message.reply_text(
                 response,
                 parse_mode=ParseMode.MARKDOWN,
-                reply_markup=self.get_storage_keyboard()
+                reply_markup=self.get_storage_result_keyboard()
             )
             
         except Exception as e:
@@ -1476,7 +1595,7 @@ class eSIMBot:
             await update.message.reply_text(
                 response,
                 parse_mode=ParseMode.MARKDOWN,
-                reply_markup=self.get_storage_keyboard()
+                reply_markup=self.get_storage_result_keyboard()
             )
             
         except Exception as e:
@@ -1693,7 +1812,7 @@ class eSIMBot:
                 photo=qr_image,
                 caption=response,
                 parse_mode=ParseMode.MARKDOWN,
-                reply_markup=self.get_storage_keyboard()
+                reply_markup=self.get_storage_result_keyboard()
             )
             
             # Xóa message cũ
@@ -1787,10 +1906,7 @@ class eSIMBot:
     
     def get_storage_keyboard(self):
         """Tạo keyboard quay về menu kho"""
-        return InlineKeyboardMarkup([
-            [InlineKeyboardButton("🏪 Về Menu Kho", callback_data="storage_menu")],
-            [InlineKeyboardButton("🔙 Về Menu Chính", callback_data="back_to_menu")]
-        ])
+        return build_storage_keyboard()
     
     # Device check và Support placeholders
     async def start_check_device(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1892,16 +2008,7 @@ Gửi /cancel để hủy thao tác hiện tại
     
     async def get_user_id(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handler để lấy user ID cho debug"""
-        user = update.effective_user
-        response = f"🆔 **THÔNG TIN USER**\n\n"
-        response += f"**User ID:** `{user.id}`\n"
-        response += f"**Username:** @{user.username}\n"
-        response += f"**First Name:** {user.first_name}\n"
-        if user.last_name:
-            response += f"**Last Name:** {user.last_name}\n"
-        response += f"\n**Admin IDs configured:** `{ADMIN_IDS}`\n"
-        response += f"**Is Admin:** {'✅ Yes' if user.id in ADMIN_IDS else '❌ No'}\n\n"
-        response += "Copy User ID trên để cấu hình admin trong file config.py"
+        response = format_user_id_response(update.effective_user, ADMIN_IDS)
         
         await update.message.reply_text(
             response,
@@ -1917,10 +2024,7 @@ Gửi /cancel để hủy thao tác hiện tại
         """Bắt đầu flow check ICCID"""
         query = update.callback_query
         
-        keyboard = [
-            [InlineKeyboardButton("🔙 Về Menu Chính", callback_data="back_to_menu")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
+        reply_markup = build_back_keyboard()
         
         await query.edit_message_text(
             "🔍 **CHECK THÔNG TIN eSIM**\n\n"
@@ -1949,11 +2053,10 @@ Gửi /cancel để hủy thao tác hiện tại
         # Gọi API
         result = simplifytrip_api.check_iccid(iccid)
         
-        keyboard = [
-            [InlineKeyboardButton("🔍 Check ICCID khác", callback_data="check_iccid")],
-            [InlineKeyboardButton("🔙 Về Menu Chính", callback_data="back_to_menu")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
+        reply_markup = build_result_actions_keyboard(
+            is_admin=user.id in ADMIN_IDS,
+            can_save=False
+        )
         
         if result['success']:
             # Format và gửi thông tin
@@ -1981,91 +2084,7 @@ Gửi /cancel để hủy thao tác hiện tại
     
     def setup_handlers(self):
         """Thiết lập các handlers cho bot"""
-        # Access control filters
-        admin_filter = filters.User(user_id=ADMIN_IDS)
-        non_admin_filter = ~filters.User(user_id=ADMIN_IDS)
-
-        # Log admin IDs để debug
-
-        # Command handlers
-        # /start - mọi người đều dùng được
-        self.application.add_handler(CommandHandler("start", self.start))
-        # /help - chỉ admin
-        self.application.add_handler(CommandHandler("help", self.help_command, filters=admin_filter))
-        
-        # Debug command để kiểm tra user ID (không cần filter admin)
-        self.application.add_handler(CommandHandler("myid", self.get_user_id))
-        
-        # Conversation handler cho tạo link & QR (unified) - mọi người đều dùng được
-        create_link_qr_handler = ConversationHandler(
-            entry_points=[CallbackQueryHandler(self.start_create_link_qr, pattern="^create_link_qr$")],
-            states={
-                WAITING_SM_DP_LINK: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_create_link_qr_auto)]
-            },
-            fallbacks=[CommandHandler("cancel", self.cancel)],
-            per_message=False,
-            per_chat=True,
-            per_user=True
-        )
-        
-        # Conversation handler cho thêm eSIM vào kho
-        add_esim_handler = ConversationHandler(
-            entry_points=[
-                CallbackQueryHandler(self.start_add_esim, pattern="^add_esim$")
-            ],
-            states={
-                WAITING_ADD_ESIM_SM_DP: [MessageHandler(filters.TEXT & ~filters.COMMAND & admin_filter, self.handle_add_esim_sm_dp)],
-                WAITING_ADD_ESIM_CODE: [MessageHandler(filters.TEXT & ~filters.COMMAND & admin_filter, self.handle_add_esim_code)],
-                WAITING_ADD_ESIM_DESC: [MessageHandler(filters.TEXT & ~filters.COMMAND & admin_filter, self.handle_add_esim_desc)],
-                WAITING_ADD_ESIM_LPA: [MessageHandler(filters.TEXT & ~filters.COMMAND & admin_filter, self.handle_add_esim_auto)],
-                WAITING_ADD_ESIM_LPA_DESC: [MessageHandler(filters.TEXT & ~filters.COMMAND & admin_filter, self.handle_add_esim_lpa_desc)],
-                WAITING_ADD_ESIM_URL: [MessageHandler(filters.TEXT & ~filters.COMMAND & admin_filter, self.handle_add_esim_url)],
-                WAITING_ADD_ESIM_URL_DESC: [MessageHandler(filters.TEXT & ~filters.COMMAND & admin_filter, self.handle_add_esim_url_desc)]
-            },
-            fallbacks=[CommandHandler("cancel", self.cancel)],
-            per_message=False,
-            per_chat=True,
-            per_user=True
-        )
-        
-        # Conversation handler cho sử dụng eSIM từ kho
-        use_esim_handler = ConversationHandler(
-            entry_points=[CallbackQueryHandler(self.start_use_esim, pattern="^use_esim$")],
-            states={
-                WAITING_ESIM_SELECTION: [CallbackQueryHandler(self.handle_esim_selection, pattern="^select_esim_")]
-            },
-            fallbacks=[CommandHandler("cancel", self.cancel)],
-            per_message=False,
-            per_chat=True,
-            per_user=True
-        )
-        
-        # Conversation handler cho check ICCID - mọi người đều dùng được
-        check_iccid_handler = ConversationHandler(
-            entry_points=[CallbackQueryHandler(self.start_check_iccid, pattern="^check_iccid$")],
-            states={
-                WAITING_ICCID: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_iccid_input)]
-            },
-            fallbacks=[CommandHandler("cancel", self.cancel)],
-            per_message=False,
-            per_chat=True,
-            per_user=True
-        )
-        
-        # Thêm các conversation handlers
-        self.application.add_handler(create_link_qr_handler, group=1)
-        self.application.add_handler(add_esim_handler, group=1)
-        self.application.add_handler(use_esim_handler, group=1)
-        self.application.add_handler(check_iccid_handler, group=1)
-        
-        # Button callback handler
-        self.application.add_handler(CallbackQueryHandler(self.button_handler), group=1)
-        
-        # Catch all unauthorized callbacks (phải đặt ở group thấp hơn)
-        self.application.add_handler(CallbackQueryHandler(self.unauthorized_callback), group=2)
-        
-        # Debug message handler (thêm cuối cùng để catch tất cả)
-        self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & admin_filter, self.debug_message_handler), group=3)
+        setup_bot_handlers(self)
     
     async def set_bot_commands(self):
         """Thiết lập menu commands cho bot"""
