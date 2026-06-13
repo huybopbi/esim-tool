@@ -36,6 +36,7 @@ from bot_keyboards import (
     build_storage_keyboard,
     build_storage_menu_keyboard,
 )
+from bot_user_info import format_user_id_response
 from config import BOT_TOKEN, MESSAGES, ADMIN_IDS
 from esim_tools import esim_tools
 from esim_storage import esim_storage
@@ -109,7 +110,7 @@ class eSIMBot:
         is_admin = user.id in ADMIN_IDS
         logger.info(f"[START] User: {user.username or user.id} | Admin: {is_admin}")
         
-        reply_markup = build_main_menu_keyboard()
+        reply_markup = build_main_menu_keyboard(is_admin=is_admin)
         
         await update.message.reply_text(
             MESSAGES['welcome'],
@@ -192,8 +193,9 @@ class eSIMBot:
         return build_back_keyboard()
     
     async def show_main_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Hiển thị menu chính - đầy đủ cho tất cả mọi người"""
-        reply_markup = build_main_menu_keyboard()
+        """Hiển thị menu chính theo quyền của người dùng"""
+        is_admin = update.effective_user.id in ADMIN_IDS
+        reply_markup = build_main_menu_keyboard(is_admin=is_admin)
         
         query = update.callback_query
         
@@ -1873,16 +1875,7 @@ Gửi /cancel để hủy thao tác hiện tại
     
     async def get_user_id(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handler để lấy user ID cho debug"""
-        user = update.effective_user
-        response = f"🆔 **THÔNG TIN USER**\n\n"
-        response += f"**User ID:** `{user.id}`\n"
-        response += f"**Username:** @{user.username}\n"
-        response += f"**First Name:** {user.first_name}\n"
-        if user.last_name:
-            response += f"**Last Name:** {user.last_name}\n"
-        response += f"\n**Admin IDs configured:** `{ADMIN_IDS}`\n"
-        response += f"**Is Admin:** {'✅ Yes' if user.id in ADMIN_IDS else '❌ No'}\n\n"
-        response += "Copy User ID trên để cấu hình admin trong file config.py"
+        response = format_user_id_response(update.effective_user, ADMIN_IDS)
         
         await update.message.reply_text(
             response,

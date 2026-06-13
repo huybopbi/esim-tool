@@ -1,16 +1,20 @@
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 
-def build_main_menu_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([
+def build_main_menu_keyboard(is_admin: bool = False) -> InlineKeyboardMarkup:
+    keyboard = [
         [
             InlineKeyboardButton("🔗 Tạo Link & QR", callback_data="create_link_qr"),
-            InlineKeyboardButton("🏪 Kho eSIM", callback_data="storage_menu"),
-        ],
-        [
             InlineKeyboardButton("🔍 Check ICCID", callback_data="check_iccid"),
         ],
-    ])
+    ]
+
+    if is_admin:
+        keyboard.append([
+            InlineKeyboardButton("🏪 Kho eSIM", callback_data="storage_menu"),
+        ])
+
+    return InlineKeyboardMarkup(keyboard)
 
 
 def build_back_keyboard() -> InlineKeyboardMarkup:
