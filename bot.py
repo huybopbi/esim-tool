@@ -2065,12 +2065,7 @@ class eSIMBot:
                 response += f"🏷️ **Mô tả:** {esim.description}\n"
             
             response += f"\n📋 **LPA String:** `{esim.lpa_string}`\n"
-            response += f"🔗 **Link cài đặt iPhone:**\n`{install_link}`\n\n"
-            
-            response += f"**Cách sử dụng:**\n\n"
-            response += f"📱 **iPhone:** Mở link hoặc quét QR\n"
-            response += f"🤖 **Android:** Quét QR code\n\n"
-            response += f"💡 **Lưu ý:** eSIM này đã được chuyển vào mục 'Đã sử dụng'"
+            response += f"🔗 **Link cài đặt iPhone:**\n`{install_link}`"
             
             # Gửi QR code với thông tin
             await query.message.reply_photo(
