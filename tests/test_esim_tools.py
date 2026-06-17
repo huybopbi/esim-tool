@@ -93,6 +93,56 @@ class ESIMToolsTest(unittest.TestCase):
         )
         self.assertEqual(entries[1]["iccid"], "89851000000010674213")
 
+    def test_parse_bulk_accepts_activecode_label_and_equals_separator(self):
+        text = (
+            "activecode=OZ8NB-X9008-G1LB2-AAAAA\n"
+            "iccid=89851000000010674211\n"
+            "\n"
+            "activationcode QRQNB-W2108-J1JE3-BBBBB\n"
+            "icc id 89851000000010674213\n"
+        )
+
+        entries, errors = self.tools.parse_bulk_esim_input(text, "rsp.esim.exchange")
+
+        self.assertEqual(errors, [])
+        self.assertEqual(len(entries), 2)
+        self.assertEqual(entries[0]["activation_code"], "OZ8NB-X9008-G1LB2-AAAAA")
+        self.assertEqual(entries[0]["iccid"], "89851000000010674211")
+        self.assertEqual(entries[1]["activation_code"], "QRQNB-W2108-J1JE3-BBBBB")
+        self.assertEqual(entries[1]["iccid"], "89851000000010674213")
+
+    def test_parse_bulk_accepts_entries_without_blank_lines(self):
+        text = (
+            "ActiveCode:OZ8NB-X9008-G1LB2-AAAAA\n"
+            "ICCID:89851000000010674211\n"
+            "ActiveCode:QRQNB-W2108-J1JE3-BBBBB\n"
+            "ICCID:89851000000010674213\n"
+        )
+
+        entries, errors = self.tools.parse_bulk_esim_input(text, "rsp.esim.exchange")
+
+        self.assertEqual(errors, [])
+        self.assertEqual(len(entries), 2)
+        self.assertEqual(entries[0]["iccid"], "89851000000010674211")
+        self.assertEqual(entries[1]["iccid"], "89851000000010674213")
+
+    def test_parse_bulk_accepts_unlabeled_activation_and_iccid_pairs(self):
+        text = (
+            "OZ8NB-X9008-G1LB2-AAAAA\n"
+            "89851000000010674211\n"
+            "QRQNB-W2108-J1JE3-BBBBB\n"
+            "89851000000010674213\n"
+        )
+
+        entries, errors = self.tools.parse_bulk_esim_input(text, "rsp.esim.exchange")
+
+        self.assertEqual(errors, [])
+        self.assertEqual(len(entries), 2)
+        self.assertEqual(entries[0]["activation_code"], "OZ8NB-X9008-G1LB2-AAAAA")
+        self.assertEqual(entries[0]["iccid"], "89851000000010674211")
+        self.assertEqual(entries[1]["activation_code"], "QRQNB-W2108-J1JE3-BBBBB")
+        self.assertEqual(entries[1]["iccid"], "89851000000010674213")
+
     def test_parse_bulk_block_can_override_sm_dp(self):
         text = (
             "SM-DP+:rsp.billionconnect.com\n"

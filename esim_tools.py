@@ -2,6 +2,7 @@ import re
 import urllib.parse
 import qrcode
 import base64
+import unicodedata
 from io import BytesIO
 from PIL import Image
 from typing import Dict, Tuple
@@ -199,46 +200,141 @@ class eSIMTools:
                 'original_data': qr_data
             }
     
+    def _normalize_bulk_label(self, label: str) -> str:
+        """Chuẩn hóa nhãn bulk để nhận cả activecode/Activation Code/mã kích hoạt."""
+        normalized = unicodedata.normalize('NFKD', label or '')
+        ascii_text = ''.join(ch for ch in normalized if not unicodedata.combining(ch))
+        return re.sub(r'[^a-z0-9]+', '', ascii_text.lower())
+
+    def _classify_bulk_label(self, label: str) -> str:
+        normalized = self._normalize_bulk_label(label)
+        activation_labels = {
+            'activationcode', 'activation', 'activecode', 'active',
+            'actcode', 'code', 'matchingid', 'matchingcode', 'qrcode',
+            'makichhoat', 'ma',
+        }
+        iccid_labels = {
+            'iccid', 'iccidnumber', 'iccidno', 'iccidnum',
+            'iccidcode', 'iccidid', 'iccidso', 'iccidma',
+            'iccidseri', 'iccidserial', 'iccidmang', 'iccidn',
+            'iccidm', 'icc', 'sim', 'simnumber', 'simno', 'simserial',
+        }
+        sm_dp_labels = {
+            'smdp', 'smdpaddress', 'smdpplus', 'smdpserver',
+            'smdpaddr', 'smdpurl', 'address', 'server',
+        }
+
+        if normalized in activation_labels:
+            return 'activation_code'
+        if normalized in iccid_labels:
+            return 'iccid'
+        if normalized in sm_dp_labels:
+            return 'sm_dp_address'
+        return ''
+
+    def _looks_like_iccid(self, value: str) -> bool:
+        compact = re.sub(r'\s+', '', value or '')
+        return compact.isdigit() and 10 <= len(compact) <= 22
+
+    def _looks_like_activation_code(self, value: str) -> bool:
+        value = (value or '').strip()
+        if not value or value.upper().startswith('LPA:') or value.startswith(('http://', 'https://')):
+            return False
+        if self._looks_like_iccid(value):
+            return False
+        if '.' in value and re.match(r'^[a-zA-Z0-9.-]+$', value):
+            return False
+        return bool(re.search(r'[A-Za-z]', value))
+
+    def _parse_bulk_line(self, line: str) -> Tuple[str, str]:
+        """Trả về (field_name, value) cho một dòng bulk nếu nhận diện được."""
+        line = (line or '').strip()
+        if not line:
+            return '', ''
+
+        if line.upper().startswith('LPA:'):
+            return 'lpa_string', line
+
+        # Nhận "Nhãn: Giá trị", "Nhãn = Giá trị", "Nhãn - Giá trị".
+        match = re.match(r'^([^:：=\t]+?)\s*(?:[:：=]|\s+-\s+)\s*(.+)$', line)
+        if match:
+            field = self._classify_bulk_label(match.group(1).strip())
+            value = match.group(2).strip()
+            if field and value:
+                return field, value
+
+        # Nhận "activecode CODE" / "activationcode CODE" không có dấu phân cách.
+        prefix_match = re.match(
+            r'^(activation\s*code|activationcode|active\s*code|activecode|act\s*code|actcode|matching\s*id|matchingid|ma\s*kich\s*hoat|mã\s*kích\s*hoạt|iccid|icc\s*id|smdp|sm[-\s]*dp\+?)\s+(.+)$',
+            line,
+            flags=re.IGNORECASE,
+        )
+        if prefix_match:
+            field = self._classify_bulk_label(prefix_match.group(1).strip())
+            value = prefix_match.group(2).strip()
+            if field and value:
+                return field, value
+
+        # Dòng không nhãn: nhận ICCID số dài, domain SM-DP+, hoặc activation code.
+        if self._looks_like_iccid(line):
+            return 'iccid', re.sub(r'\s+', '', line)
+
+        if '.' in line and re.match(r'^[a-zA-Z0-9.-]+$', line):
+            return 'sm_dp_address', line
+
+        if self._looks_like_activation_code(line):
+            return 'activation_code', line
+
+        return '', ''
+
+    def _split_bulk_blocks(self, text: str) -> list:
+        """Tách bulk input linh hoạt, kể cả khi người dùng không chèn dòng trống."""
+        blocks = []
+        current = []
+        current_fields = set()
+
+        def flush():
+            nonlocal current, current_fields
+            if current:
+                blocks.append('\n'.join(current).strip())
+                current = []
+                current_fields = set()
+
+        for raw_line in text.splitlines():
+            line = raw_line.strip()
+            if not line:
+                flush()
+                continue
+
+            field, _ = self._parse_bulk_line(line)
+
+            # Nếu block hiện tại đã có activation/LPA rồi mà gặp eSIM mới,
+            # tự tách block để không cần dòng trống giữa các eSIM.
+            starts_new_entry = (
+                field == 'lpa_string' and current_fields
+            ) or (
+                field == 'activation_code' and (
+                    'activation_code' in current_fields or 'lpa_string' in current_fields
+                )
+            )
+            if starts_new_entry:
+                flush()
+
+            current.append(line)
+            if field:
+                current_fields.add(field)
+
+        flush()
+        return blocks
+
     def _parse_block_fields(self, block: str) -> Dict[str, str]:
         """Tách các trường có nhãn trong một block (Activation Code / ICCID / SM-DP+ / LPA)."""
         fields: Dict[str, str] = {}
 
-        activation_labels = {
-            'activation code', 'activation', 'code', 'matching id',
-            'mã kích hoạt', 'ma kich hoat', 'mã', 'ma',
-        }
-        iccid_labels = {'iccid', 'icc id', 'sim'}
-        sm_dp_labels = {
-            'sm-dp+', 'sm-dp+ address', 'smdp', 'smdp+', 'sm-dp',
-            'smdp address', 'sm-dp address', 'sm dp+', 'address', 'server',
-        }
-
         for raw_line in block.splitlines():
-            line = raw_line.strip()
-            if not line:
-                continue
-
-            # Dòng LPA thô (ghi đè mọi thứ cho block này)
-            if line.upper().startswith('LPA:'):
-                fields['lpa_string'] = line
-                continue
-
-            # Định dạng "Nhãn: Giá trị" (hỗ trợ cả dấu hai chấm full-width)
-            match = re.match(r'^([^:：]+)[:：]\s*(.*)$', line)
-            if not match:
-                continue
-
-            label = match.group(1).strip().lower()
-            value = match.group(2).strip()
-            if not value:
-                continue
-
-            if label in activation_labels:
-                fields['activation_code'] = value
-            elif label in iccid_labels:
-                fields['iccid'] = value
-            elif label in sm_dp_labels:
-                fields['sm_dp_address'] = value
+            field, value = self._parse_bulk_line(raw_line)
+            if field and value:
+                fields[field] = value
 
         return fields
 
@@ -266,8 +362,7 @@ class eSIMTools:
 
         default_sm_dp_address = (default_sm_dp_address or "").strip()
 
-        # Tách block theo dòng trống (cho phép khoảng trắng trên dòng trống)
-        raw_blocks = re.split(r'\n\s*\n', text.strip())
+        raw_blocks = self._split_bulk_blocks(text.strip())
 
         for raw in raw_blocks:
             block = raw.strip()

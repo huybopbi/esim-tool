@@ -35,22 +35,26 @@ Kết quả trả về:
 Trong menu Kho eSIM, bấm **"📦 Thêm hàng loạt"**:
 1. Chọn **SM-DP+ dùng chung** cho cả lô — có sẵn `rsp.esim.exchange`,
    `rsp.billionconnect.com`, hoặc **"✍️ Nhập SM-DP+ khác"** để tự nhập.
-2. Dán **danh sách eSIM**, mỗi eSIM cách nhau bằng **một dòng trống**:
+2. Dán **danh sách eSIM**. Bot nhận nhiều kiểu nhãn và dấu phân cách:
 
 ```text
 Activation Code:OZ8NB-X9008-G1LB2-xxxxx
 ICCID:89851000000010674211
-
-Activation Code:QRQNB-W2108-J1JE3-xxxx
-ICCID:89851000000010674213
+activecode=QRQNB-W2108-J1JE3-xxxx
+iccid=89851000000010674213
 ```
 
 Bot dựng LPA string `LPA:1$<SM-DP+>$<Activation Code>` cho từng eSIM, lưu kèm
 **ICCID**, rồi báo cáo số eSIM đã thêm và các block bị lỗi (kèm lý do).
 
 Ghi chú:
-- Nhãn không phân biệt hoa/thường (chấp nhận `Activation Code`, `Code`,
-  `Mã kích hoạt`, `ICCID`, `SM-DP+`...).
+- Nhãn không phân biệt hoa/thường (chấp nhận `Activation Code`, `activecode`,
+  `activationcode`, `Code`, `Mã kích hoạt`, `ICCID`, `ICC ID`, `SM-DP+`...).
+- Dấu phân cách có thể là `:`, `=` hoặc khoảng trắng với một số nhãn phổ biến.
+- Mỗi eSIM có thể cách nhau bằng dòng trống hoặc dán liên tiếp nếu mỗi eSIM có
+  đủ cặp `Activation Code` + `ICCID`.
+- Nếu mỗi eSIM chỉ có 2 dòng, bot cũng nhận dạng cặp không nhãn:
+  dòng activation code + dòng ICCID.
 - Mỗi block có thể tự khai dòng `SM-DP+:` để ghi đè SM-DP+ chung, hoặc dán
   thẳng một dòng `LPA:1$...$...`.
 
