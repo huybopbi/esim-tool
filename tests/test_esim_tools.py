@@ -126,6 +126,39 @@ class ESIMToolsTest(unittest.TestCase):
         self.assertEqual(entries[0]["iccid"], "89851000000010674211")
         self.assertEqual(entries[1]["iccid"], "89851000000010674213")
 
+    def test_parse_bulk_ignores_sim_number_headers(self):
+        text = (
+            "SIM1:\n"
+            "SM-DP_Address:rsp.esim.exchange\n"
+            "Activation Code:MHCNJ-JEAA1-S1Y1K-BLGOK\n"
+            "ICCID:89851000000010750509\n"
+            "SIM2:\n"
+            "SM-DP_Address:rsp.esim.exchange\n"
+            "Activation Code:Q8PNJ-20FA1-V1Z4S-3DJX7\n"
+            "ICCID:89851000000010750511\n"
+            "SIM3:\n"
+            "SM-DP_Address:rsp.esim.exchange\n"
+            "Activation Code:AUVNJ-TFZA1-X1TLP-84UV2\n"
+            "ICCID:89851000000010750513\n"
+            "SIM4:\n"
+            "SM-DP_Address:rsp.esim.exchange\n"
+            "Activation Code:BE1NJ-CA2A2-01C42-2851E\n"
+            "ICCID:89851000000010750516\n"
+            "SIM5:\n"
+            "SM-DP_Address:rsp.esim.exchange\n"
+            "Activation Code:X0PNJ-196A1-U1WI1-1H5NN\n"
+            "ICCID:89851000000010750510\n"
+        )
+
+        entries, errors = self.tools.parse_bulk_esim_input(text, "rsp.esim.exchange")
+
+        self.assertEqual(errors, [])
+        self.assertEqual(len(entries), 5)
+        self.assertEqual(entries[0]["activation_code"], "MHCNJ-JEAA1-S1Y1K-BLGOK")
+        self.assertEqual(entries[0]["iccid"], "89851000000010750509")
+        self.assertEqual(entries[4]["activation_code"], "X0PNJ-196A1-U1WI1-1H5NN")
+        self.assertEqual(entries[4]["iccid"], "89851000000010750510")
+
     def test_parse_bulk_accepts_unlabeled_activation_and_iccid_pairs(self):
         text = (
             "OZ8NB-X9008-G1LB2-AAAAA\n"

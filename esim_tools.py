@@ -255,6 +255,11 @@ class eSIMTools:
         if line.upper().startswith('LPA:'):
             return 'lpa_string', line
 
+        # Dòng tiêu đề/đánh số block như "SIM1:", "SIM 2:", "eSIM3:".
+        # Đây không phải activation code; dùng làm marker phân tách eSIM.
+        if re.match(r'^(?:e?sim|profile|esim)\s*#?\s*\d+\s*[:：]$', line, flags=re.IGNORECASE):
+            return 'entry_header', line
+
         # Nhận "Nhãn: Giá trị", "Nhãn = Giá trị", "Nhãn - Giá trị".
         match = re.match(r'^([^:：=\t]+?)\s*(?:[:：=]|\s+-\s+)\s*(.+)$', line)
         if match:
@@ -307,6 +312,9 @@ class eSIMTools:
                 continue
 
             field, _ = self._parse_bulk_line(line)
+            if field == 'entry_header':
+                flush()
+                continue
 
             # Nếu block hiện tại đã có activation/LPA rồi mà gặp eSIM mới,
             # tự tách block để không cần dòng trống giữa các eSIM.
@@ -333,7 +341,7 @@ class eSIMTools:
 
         for raw_line in block.splitlines():
             field, value = self._parse_bulk_line(raw_line)
-            if field and value:
+            if field and field != 'entry_header' and value:
                 fields[field] = value
 
         return fields
